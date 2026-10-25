@@ -1,7 +1,6 @@
 # Box1 Software Templates
 
-Platform-owned Developer Hub golden paths. Start with **Create → Quarkus REST
-Service** at https://developer-hub.apps.ocp.box1.org/create.
+Platform-owned Developer Hub golden paths. Start with **Create → Create Quarkus Service** at https://developer-hub.apps.ocp.box1.org/create.
 
 The `quarkus-rest-service` template creates a repository under `box1-org`, a
 catalog Component, and a GitOps onboarding PR. Its application skeleton derives
@@ -10,6 +9,7 @@ from the proven Quarkus reference at
 Maven wrapper, unit/HTTP/packaged tests, Checkstyle, FindSecBugs, immutable Git
 metadata, Jib with a pinned UBI runtime, and centrally resolved Tekton tasks.
 
+Development workloads run in `<service>-dev` with a matching Route hostname.
 The GitOps skeleton supplies Namespace, Deployment, probes, Service, TLS Route,
 hashed ConfigMap, runtime ServiceAccount, image-puller binding, PAC Repository,
 scoped observer RBAC, and an automatically reconciled Argo CD Application.
@@ -44,7 +44,7 @@ deployed by the scaffolder or Tekton.
 - `templates/quarkus-rest-service/gitops/`: allowlisted onboarding files.
 - `scripts/validate.mjs`: render/schema/Kustomize checks for multiple names.
 
-Run `npm ci && npm run validate`. The validation uses the same Nunjucks variable
+Install Node.js 20.11+ and `kubectl`, then run `npm ci && npm run validate`. The validation uses the same Nunjucks variable
 delimiters as `fetch:template`, checks action inputs against the live exported
 schemas when available, and renders both application and GitOps manifests.
 Live acceptance evidence is recorded in `VERIFICATION.md`.
@@ -52,7 +52,7 @@ Live acceptance evidence is recorded in `VERIFICATION.md`.
 Maintain changes through PRs and retest a generated project when updating the
 Quarkus BOM, runtime digest, plugin versions, pipeline contract, or manifests.
 Java package/group `org.box1` and the lab ingress/registry are deliberately fixed.
-Generated repository names must be unique, 3–40 characters, DNS-safe, and may not
-start with `box1-` or reuse `quarkus-reference`. Repository publishing fails on an
+Generated repository names must be unique, 3–35 characters, DNS-safe, and may not
+start with `box1-`, `openshift-`, or `kube-`, or reuse platform names. Repository publishing fails on an
 existing name; it does not overwrite a repository. If a later step fails, inspect
 the task output and existing repository/PR before retrying with that name.

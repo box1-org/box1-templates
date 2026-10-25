@@ -1,5 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+labels:
+  - pairs:
+      backstage.io/kubernetes-id: ${{ values.name }}
+    includeSelectors: false
+    includeTemplates: true
 resources:
   - namespace.yaml
   - serviceaccount.yaml
@@ -9,7 +14,7 @@ resources:
   - onboarding.yaml
 configMapGenerator:
   - name: ${{ values.name }}-config
-    namespace: ${{ values.name }}
+    namespace: ${{ values.namespace }}
     literals:
       - GREETING_PREFIX=Hello from box1
       - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70.0 -Djava.io.tmpdir=/tmp

@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: quarkus-rest-service
-  title: Quarkus REST Service
+  title: Create Quarkus Service
   description: Java 21 REST service with tests, Jib, Tekton CI/CD, and OpenShift GitOps onboarding.
   tags: [quarkus, java, tekton, openshift, golden-path]
   annotations:
@@ -18,7 +18,7 @@ spec:
           title: Service and repository name
           type: string
           minLength: 3
-          maxLength: 40
+          maxLength: 35
           pattern: '^(?!quarkus-reference$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
           description: A unique lowercase name, used for the GitHub repository, namespace, image, and Route.
         description:
@@ -50,6 +50,7 @@ spec:
         targetPath: application
         values:
           name: ${{ parameters.name }}
+          namespace: ${{ parameters.name }}-dev
           description: ${{ parameters.description }}
           owner: ${{ parameters.owner }}
     - id: publish
@@ -73,6 +74,7 @@ spec:
         targetPath: gitops
         values:
           name: ${{ parameters.name }}
+          namespace: ${{ parameters.name }}-dev
           sourceRevision: ${{ steps.publish.output.commitHash }}
     - id: onboarding
       name: Propose GitOps onboarding

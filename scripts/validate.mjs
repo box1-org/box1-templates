@@ -33,10 +33,10 @@ function renderTree(from, to, values) {
   }
 }
 
-for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smoke']) {
+for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smoke', 'a'.repeat(35)]) {
   const parameters = { name, description: 'A Quarkus REST service on OpenShift', owner: 'user:default/mike4263', visibility: 'private' };
   assert(checkForm(parameters), JSON.stringify(checkForm.errors));
-  const values = { ...parameters, sourceRevision: 'a'.repeat(40) };
+  const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'a'.repeat(40) };
   const target = path.join(root, '.validation', name);
   fs.rmSync(target, { recursive: true, force: true });
   renderTree(path.join(source, 'skeleton'), path.join(target, 'application'), values);
@@ -44,18 +44,20 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
   for (const folder of [path.join(target, 'application/deploy'), path.join(target, `gitops/workloads/${name}`)]) {
     const resources = YAML.parseAllDocuments(execFileSync('kubectl', ['kustomize', folder], { encoding: 'utf8' })).map(d => d.toJSON());
     const deployment = resources.find(r => r.kind === 'Deployment');
-    assert.equal(deployment.metadata.namespace, name);
+    assert.equal(deployment.metadata.namespace, name + '-dev');
+    assert.equal(deployment.metadata.labels['backstage.io/kubernetes-id'], name);
+    assert.equal(deployment.spec.template.metadata.labels['backstage.io/kubernetes-id'], name);
     assert.equal(deployment.spec.replicas, 0);
     assert.equal(deployment.spec.template.spec.containers[0].image, `image-registry.openshift-image-registry.svc:5000/box1-ci/${name}@sha256:${'0'.repeat(64)}`);
     const cm = resources.find(r => r.kind === 'ConfigMap');
-    assert.equal(cm.metadata.namespace, name);
+    assert.equal(cm.metadata.namespace, name + '-dev');
     assert.equal(deployment.spec.template.spec.containers[0].envFrom[0].configMapRef.name, cm.metadata.name);
     const pac = resources.find(r => r.kind === 'Repository');
     assert.equal(pac.metadata.namespace, 'box1-ci');
     assert.equal(pac.spec.url, `https://github.com/box1-org/${name}`);
     assert.deepEqual(pac.spec.settings.github_app_token_scope_repos, ['box1-org/box1-gitops']);
     assert.equal(resources.find(r => r.kind === 'Role' && r.metadata.namespace === 'openshift-gitops').rules[0].resourceNames[0], name);
-    assert(resources.some(r => r.kind === 'Route' && r.spec.host === `${name}.apps.ocp.box1.org`));
+    assert(resources.some(r => r.kind === 'Route' && r.spec.host === `${name}-dev.apps.ocp.box1.org`));
     const text = fs.readFileSync(path.join(folder, 'kustomization.yaml'), 'utf8');
     assert.equal((text.match(/^    digest: sha256:[a-f0-9]{64}$/gm) ?? []).length, 1, 'Promotion digest replacement contract');
   }
@@ -77,16 +79,20 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
     const run = YAML.parse(fs.readFileSync(path.join(app, file), 'utf8'));
     for (const task of run.spec.pipelineSpec.tasks) {
       assert.equal(task.taskRef.resolver, 'cluster');
+      assert(run.metadata.generateName.length + 5 + 1 + task.name.length + 4 <= 63, 'Generated TaskRun/Pod name exceeds DNS label limit');
       const args = Object.fromEntries(task.params.map(p => [p.name, p.value]));
       if (['build', 'validate'].includes(task.name)) {
         assert.equal(args['source-repo'], `box1-org/${name}`);
         assert.equal(args['image-name'], name);
-      } else assert.equal(args['application-name'], name);
+      } else {
+        assert.equal(args['application-name'], name);
+        if (task.name === 'smoke') assert.equal(args['application-namespace'], name + '-dev');
+      }
     }
   }
   console.log(`PASS ${name}: render, ownership, pipeline contract, namespaces, Kustomize${actionsFile ? ', installed actions' : ''}`);
 }
-for (const name of ['../escape', 'Uppercase', 'ab', 'box1-gitops', 'quarkus-reference', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(41)]) {
+for (const name of ['../escape', 'Uppercase', 'ab', 'box1-gitops', 'quarkus-reference', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(36)]) {
   assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
 }
 console.log('PASS rejected unsafe/reserved names');

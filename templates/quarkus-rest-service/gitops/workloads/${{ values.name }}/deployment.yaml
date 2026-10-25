@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ${{ values.name }}
-  namespace: ${{ values.name }}
+  namespace: ${{ values.namespace }}
   annotations:
     box1.org/source-revision: ${{ values.sourceRevision }}
     box1.org/build-pipelinerun: awaiting-first-release

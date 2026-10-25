@@ -24,7 +24,8 @@ Java package `org.box1` is deliberately stable across generated services.
 
 1. Open the GitOps onboarding PR linked by Developer Hub. Review and merge it
    after its checks pass. Argo CD discovers `applications/${{ values.name }}.yaml`
-   through the root application and installs the manifests and PAC registration.
+   through the root application and installs the manifests and PAC registration into development namespace
+   `${{ values.namespace }}`.
 2. Wait for the `${{ values.name }}` Argo Application to be Synced/Healthy and the
    PAC Repository to exist in `box1-ci`. The initial Deployment has zero replicas
    and a non-runnable placeholder digest until the first successful release.
@@ -39,11 +40,11 @@ Java package `org.box1` is deliberately stable across generated services.
 
 No developer runs `oc apply` or writes deployment YAML.
 
-Route: https://${{ values.name }}.apps.ocp.box1.org
+Route: https://${{ values.namespace }}.apps.ocp.box1.org
 
 ```sh
 EXPECTED_GIT_REF="$(git rev-parse HEAD)" python3 scripts/smoke.py \
-  https://${{ values.name }}.apps.ocp.box1.org
+  https://${{ values.namespace }}.apps.ocp.box1.org
 ```
 
 ## Delivery and configuration

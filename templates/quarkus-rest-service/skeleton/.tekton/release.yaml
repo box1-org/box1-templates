@@ -95,6 +95,8 @@ spec:
         value: "$(tasks.build.results.image-digest)"
       - name: application-name
         value: "${{ values.name }}"
+      - name: application-namespace
+        value: "${{ values.namespace }}"
     results:
     - name: image-digest
       value: "$(tasks.build.results.image-digest)"
