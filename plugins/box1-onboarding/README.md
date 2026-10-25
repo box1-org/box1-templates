@@ -7,8 +7,9 @@ the declared peer dependencies. Run `npm run package:onboarding` from
 box1-templates to copy the three runtime files into the sibling box1-gitops
 ConfigMap transport and refresh the Deployment source checksum. Review/publish
 both repositories together. The installer stages real files because npm pack
-ignores ConfigMap-volume symlinks, and invalidates only this module's cache hash
-when source changes.
+ignores ConfigMap-volume symlinks. The adapter invalidates only this small local
+module's cache hash on every boot to avoid the 1.9 local-package reinstall cleanup
+removing the new module; installed third-party plugins retain their caches.
 
 The source repository marker and a durable `rhdh/box1-onboard-<name>` ConfigMap
 bind one request to one source repository, development namespace, PR pair and

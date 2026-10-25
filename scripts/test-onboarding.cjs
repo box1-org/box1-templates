@@ -71,3 +71,8 @@ test('fresh validation retries keep the exact GitOps tree and merge only the new
  w.wait=async(_l,_s,fn)=>{assert.equal(typeof await fn(),'string');assert.equal(await fn(),true);};
  await w.merge('onboarding',pr,{});assert.equal(merged,true);assert.equal(w.data.phase,'ONBOARDING_MERGED');
 });
+test('Lease renewTime uses Kubernetes MicroTime precision',async()=>{
+ let lease;
+ const w=workflow({get:async()=>null,request:async(method,p,body)=>{lease=body;return body;}});
+ await w.open();assert.match(lease.spec.renewTime,/\.\d{6}Z$/);assert.equal(lease.spec.leaseDurationSeconds,120);
+});

@@ -69,7 +69,7 @@ class Kube {
         let text=''; res.on('data', c => text+=c); res.on('end', () => {
           if (allowMissing && res.statusCode === 404) return resolve(null);
           let value; try { value=JSON.parse(text); } catch { return reject(new Error('Invalid Kubernetes response')); }
-          if (res.statusCode >= 300) { const error=new Error(`Kubernetes ${method} ${resource}: HTTP ${res.statusCode} ${value.reason || ''}`); error.status=res.statusCode; return reject(error); }
+          if (res.statusCode >= 300) { const error=new Error(`Kubernetes ${method} ${resource}: HTTP ${res.statusCode} ${resource.includes('/secrets') ? value.reason || '' : value.message || value.reason || ''}`); error.status=res.statusCode; return reject(error); }
           resolve(value);
         });
       });
@@ -92,14 +92,14 @@ class Workflow {
     const leasePath=LEASES+'/'+this.key;
     const old=await this.kube.get(leasePath);
     if (old?.spec?.holderIdentity && Date.parse(old.spec.renewTime)+old.spec.leaseDurationSeconds*1000>Date.now()) throw new Error('Another onboarding task holds this service lease; retry after it finishes');
-    this.lease=await this.kube.request(old?'PUT':'POST',old?leasePath:LEASES,{apiVersion:'coordination.k8s.io/v1',kind:'Lease',metadata:{name:this.key,namespace:'rhdh',...(old?{resourceVersion:old.metadata.resourceVersion}:{})},spec:{holderIdentity:this.holder,leaseDurationSeconds:120,renewTime:new Date().toISOString()}});
+    this.lease=await this.kube.request(old?'PUT':'POST',old?leasePath:LEASES,{apiVersion:'coordination.k8s.io/v1',kind:'Lease',metadata:{name:this.key,namespace:'rhdh',...(old?{resourceVersion:old.metadata.resourceVersion}:{})},spec:{holderIdentity:this.holder,leaseDurationSeconds:120,renewTime:new Date().toISOString().replace('Z','000Z')}});
     this.cm=await this.kube.get(ROOT+'/configmaps/'+this.key);
     this.data=this.cm?JSON.parse(this.cm.data['status.json']):null;
   }
   async renew() {
     check(!this.ctx.signal?.aborted,'Onboarding task was cancelled; submit the same service parameters to resume');
     const current=await this.kube.get(LEASES+'/'+this.key);check(current?.spec.holderIdentity===this.holder,'Onboarding lease lost');
-    this.lease=await this.kube.request('PUT',LEASES+'/'+this.key,{...current,spec:{...current.spec,renewTime:new Date().toISOString()}});
+    this.lease=await this.kube.request('PUT',LEASES+'/'+this.key,{...current,spec:{...current.spec,renewTime:new Date().toISOString().replace('Z','000Z')}});
   }
   async close() { if(this.lease) {const l=await this.kube.get(LEASES+'/'+this.key);if(l?.spec.holderIdentity===this.holder) await this.kube.request('PUT',LEASES+'/'+this.key,{...l,spec:{...l.spec,holderIdentity:'',leaseDurationSeconds:1}});} }
   async save(phase, extra={}) {
