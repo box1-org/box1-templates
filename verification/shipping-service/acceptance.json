@@ -1,0 +1,55 @@
+{
+  "service": "shipping-service",
+  "state": "COMPLETE",
+  "sourceRevision": "86c77b6b87a7eea46d2638f305ecf5748ca2c9ea",
+  "sourceCommits": 2,
+  "pipeline": "onb-shipping-service-86c77b6b",
+  "pipelineCreatedAt": "2026-10-25T17:45:11Z",
+  "platformReadyAt": "2026-10-25T17:45:11.276Z",
+  "buildRecordedAt": "2026-10-25T17:45:11.954Z",
+  "buildCount": 1,
+  "image": "image-registry.openshift-image-registry.svc:5000/box1-ci/shipping-service@sha256:57a4ba5e24be99070f55f4db9e41a6348802224735e57bec9f7741b7a611c184",
+  "argoSync": "Synced",
+  "argoHealth": "Healthy",
+  "publicEndpointStatus": 200,
+  "info": {
+    "name": "shipping-service",
+    "version": "1.0.0-SNAPSHOT",
+    "javaVersion": 21,
+    "deliveryMode": "tekton-gitops",
+    "gitRef": "86c77b6b87a7eea46d2638f305ecf5748ca2c9ea"
+  },
+  "prs": [
+    {
+      "url": "https://github.com/box1-org/box1-gitops/pull/17",
+      "mergedBy": "box1-developer-hub[bot]",
+      "head": "eb1b5b41e72faae886cf0ca71102b4c95867cd07",
+      "checks": [
+        {
+          "name": "Pipelines as Code CI / box1-phase1-smoke-",
+          "conclusion": "success"
+        },
+        {
+          "name": "Pipelines as Code CI / box1-gitops-validate-",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/box1-org/box1-gitops/pull/18",
+      "mergedBy": "box1-developer-hub[bot]",
+      "head": "0a57cd9e0d150d6920ee233201d565fd92f6bc20",
+      "checks": [
+        {
+          "name": "Pipelines as Code CI / box1-phase1-smoke-",
+          "conclusion": "success"
+        },
+        {
+          "name": "Pipelines as Code CI / box1-gitops-validate-",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "credentialSecretDeleted": true
+}

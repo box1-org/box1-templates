@@ -3,7 +3,7 @@
 Platform-owned Developer Hub golden paths. Start with **Create → Create Quarkus Service** at https://developer-hub.apps.ocp.box1.org/create.
 
 The `quarkus-rest-service` template creates a repository under `box1-org`, a
-catalog Component, and a GitOps onboarding PR. Its application skeleton derives
+catalog Component/API, and a deployed development service through checked GitOps PRs. Its application skeleton derives
 from the proven Quarkus reference at
 `b1a2026552bd9bf09f091b05d6b1cba41ea4b72d`. It includes Java 21, Quarkus 3.40.1.1,
 Maven wrapper, unit/HTTP/packaged tests, Checkstyle, FindSecBugs, immutable Git
@@ -29,12 +29,12 @@ App authentication; the form never requests a personal access token.
 GitOps `pipelines-ci` must contain the parameterized Phase 4 tasks. The existing
 root Argo Application discovers newly merged `applications/*.yaml` files.
 
-Onboarding remains a reviewed GitOps PR. Merge it and wait for Argo reconciliation
-before the first application change. The repository creation event precedes PAC
-registration, so the first delivery starts with the next push. Until then the
-Deployment has zero replicas and a non-runnable zero digest. Promotion activates
-it with the digest from its own successful Jib build. Application code is never
-deployed by the scaffolder or Tekton.
+Development onboarding PRs are validated and merged by the workflow under the
+platform's development-only allowlist. It observes namespace, ServiceAccount,
+registry, observer, PAC and Argo readiness before explicitly starting the initial
+CI build. The creation webhook is not used as a first-delivery trigger. The
+Deployment starts at zero replicas with a zero digest and is activated only by
+a checked first-image promotion. Only Argo CD applies workload manifests.
 
 ## Layout and validation
 
@@ -55,9 +55,10 @@ Maintain changes through PRs and retest a generated project when updating the
 Quarkus BOM, runtime digest, plugin versions, pipeline contract, or manifests.
 Java package/group `org.box1` and the lab ingress/registry are deliberately fixed.
 Generated repository names must be unique, 3–35 characters, DNS-safe, and may not
-start with `box1-`, `openshift-`, or `kube-`, or reuse platform names. Repository publishing fails on an
-existing name; it does not overwrite a repository. If a later step fails, inspect
-the task output and existing repository/PR before retrying with that name.
+start with `box1-`, `openshift-`, or `kube-`, or reuse platform names. Existing unmanaged repositories are rejected. Requests with matching durable
+ownership records resume their previous repositories, PRs and initial builds.
+Catalog registration is idempotent, and completion requires the catalog entry
+as well as the verified deployment.
 
 ## Zero-touch development onboarding (template 1.1.0)
 

@@ -3,7 +3,7 @@ const { createBackendModule, coreServices } = require('@backstage/backend-plugin
 const { createTemplateAction } = require('@backstage/plugin-scaffolder-node');
 const { scaffolderActionsExtensionPoint } = require('@backstage/plugin-scaffolder-node');
 const { DefaultGithubCredentialsProvider, ScmIntegrations } = require('@backstage/integration');
-const { Workflow,ensureCatalog } = require('./workflow.cjs');
+const { Workflow } = require('./workflow.cjs');
 const {catalogServiceRef}=require('@backstage/plugin-catalog-node');
 const shared = { name:{type:'string',minLength:3,maxLength:35}, owner:{type:'string'} };
 function action(id, operation, config, credentials) {
@@ -21,7 +21,7 @@ exports.default=createBackendModule({pluginId:'scaffolder',moduleId:'box1-develo
     actions.addActions(action('box1:repository:ensure','repository',config,credentials),action('box1:development:onboard','delivery',config,credentials),createTemplateAction({
       id:'box1:catalog:ensure',description:'Register or reuse the owned service catalog entry and observe processing',
       schema:{input:{type:'object',additionalProperties:false,required:['name'],properties:{name:shared.name}},output:{type:'object',properties:{entityRef:{type:'string'},catalogInfoUrl:{type:'string'}}}},
-      async handler(ctx){await ensureCatalog(catalog,ctx);},
+      async handler(ctx){await new Workflow({ctx,config,credentials,catalog}).run('registerCatalog');},
     }));
   }});
 }});

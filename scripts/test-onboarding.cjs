@@ -89,3 +89,10 @@ test('a pending duplicate catalog location is resolved without swallowing other 
 test('catalog registration refuses an entity from another repository',async()=>{
  await assert.rejects(ensureCatalog({getEntityByRef:async()=>({metadata:{annotations:{'github.com/project-slug':'other/repository'}}})},catalogContext()),/another source repository/);
 });
+test('catalog failures keep provisioning incomplete and produce durable failure state',async()=>{
+ const w=workflow();w.data={...w.data,phase:'DEPLOYMENT_READY',deploymentImage:'registry@'+digest,onboardingPR:{merged:true},promotionPR:{merged:true}};
+ w.ctx.getInitiatorCredentials=async()=>({principal:{type:'service'}});w.open=async()=>{};w.close=async()=>{};
+ w.catalogService={getEntityByRef:async()=>undefined,addLocation:async()=>{throw Error('catalog unavailable');}};
+ await assert.rejects(w.run('registerCatalog'),/catalog unavailable/);assert.equal(w.data.phase,'FAILED');assert.equal(w.data.failedDuring,'CATALOG_REGISTERING');
+ w.catalogService={getEntityByRef:async()=>ownedEntity};await w.run('registerCatalog');assert.equal(w.data.phase,'COMPLETE');assert.equal(w.data.catalogEntityRef,'component:default/'+name);
+});

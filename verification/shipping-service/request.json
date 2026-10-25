@@ -1,0 +1,9 @@
+{
+  "templateRef": "template:default/quarkus-rest-service",
+  "values": {
+    "name": "shipping-service",
+    "description": "Shipping REST service with zero-touch development onboarding",
+    "owner": "user:default/mike4263",
+    "visibility": "private"
+  }
+}

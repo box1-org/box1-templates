@@ -80,7 +80,7 @@ class Kube {
   get(p) { return this.request('GET',p,undefined,true); }
 }
 class Workflow {
-  constructor({ctx, config, credentials, kube = new Kube()}) { this.ctx=ctx; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); }
+  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); }
   async github(p, method='GET', body, options={}) {
     const { token } = options.token ? {token:options.token} : await this.credentials.getCredentials({url:'https://github.com/'+ORG});
     const response=await fetch('https://api.github.com'+p, {method, headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:body===undefined?undefined:JSON.stringify(body), signal:AbortSignal.timeout(45000)});
@@ -341,9 +341,15 @@ class Workflow {
         return true;
       }catch(e){if(e.message==='Deployed source identity mismatch')throw e;return 'public Route reachable';}
     });
-    await this.save('COMPLETE',{deploymentImage:image,completedAt:new Date().toISOString()});
+    await this.save('DEPLOYMENT_READY',{deploymentImage:image,deploymentReadyAt:new Date().toISOString()});
     const links={sourceUrl:this.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${this.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${this.data.pipelineName}`,deploymentUrl:'https://'+this.ns+'.apps.ocp.box1.org',argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${this.name}`,onboardingUrl:this.data.onboardingPR.url,statusRecord:'rhdh/'+this.key,imageDigest:this.data.imageDigest};
     for(const [key,value] of Object.entries(links))this.ctx.output(key,value);
+  }
+  async registerCatalog() {
+    check(this.data?.deploymentImage && this.data.onboardingPR?.merged && this.data.promotionPR?.merged,'Catalog completion requires a verified development deployment');
+    await this.save('CATALOG_REGISTERING');
+    await ensureCatalog(this.catalogService,this.ctx);
+    await this.save('COMPLETE',{completedAt:new Date().toISOString(),catalogEntityRef:'component:default/'+this.name});
   }
   async run(operation) {
     try{await this.open();await this[operation]();}
@@ -364,12 +370,12 @@ async function ensureCatalog(catalog,ctx) {
   if(existing){verify(existing);ctx.logger.info('Reusing existing catalog entity '+ref);return;}
   try{await catalog.addLocation({type:'url',target},options);}
   catch(error){if(error.statusCode!==409&&error.status!==409)throw error;ctx.logger.info('Catalog location already exists; observing entity processing');}
-  const deadline=Date.now()+60000;
+  const deadline=Date.now()+300000;
   while(Date.now()<deadline){
     const entity=await catalog.getEntityByRef(ref,options);
     if(entity){verify(entity);return;}
     await pause(2000,undefined,{signal:ctx.signal});
   }
-  throw new Error('Catalog registration did not resolve '+ref+' within 60 seconds; resume the same onboarding request');
+  throw new Error('Catalog registration did not resolve '+ref+' within five minutes; resume the same onboarding request');
 }
 module.exports={Workflow,Kube,validateName,validateBundle,filesAt,blobSha,ensureCatalog};

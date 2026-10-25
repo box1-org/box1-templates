@@ -19,7 +19,7 @@ unmanaged existing repositories and reserved baseline names are rejected.
 
 States: REQUESTED → REPOSITORY_READY → ONBOARDING_PR_OPEN → ONBOARDING_MERGED →
 PLATFORM_READY → BUILD_RUNNING → IMAGE_BUILT → PROMOTION_PR_OPEN →
-PROMOTION_MERGED → COMPLETE. FAILED retains the prior successful state, failed
+PROMOTION_MERGED → DEPLOYMENT_READY → CATALOG_REGISTERING → COMPLETE. FAILED retains the prior successful state, failed
 stage, diagnostic message, timestamps and resource links. State transitions are
 visible in scaffolder task logs. Waits observe bounded API conditions; polling
 intervals are not readiness assumptions.

@@ -1,0 +1,15 @@
+{
+  "unchanged": true,
+  "deploymentUID": "416c4255-e1c1-4ccd-95b4-6821469e743b",
+  "deploymentGeneration": 6,
+  "image": "image-registry.openshift-image-registry.svc:5000/box1-ci/orders-service@sha256:406e4102a18486888ee0a3e240ca63bd67a911550dfa504b662859eb9ce8acd7",
+  "replicas": 1,
+  "podUIDs": [
+    "3d8d8ff3-65b8-402b-90e6-f7a14d87d3b3"
+  ],
+  "checks": [
+    "Deployment spec, UID and generation unchanged",
+    "Application spec unchanged",
+    "Pod UIDs unchanged"
+  ]
+}

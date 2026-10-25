@@ -1,0 +1,61 @@
+{
+  "id": "ee06c6af-46b3-4f33-a8e3-bc202ebf6f31",
+  "status": "completed",
+  "output": {
+    "links": [
+      {
+        "title": "Source repository",
+        "url": "https://github.com/box1-org/shipping-service"
+      },
+      {
+        "title": "Service in catalog",
+        "icon": "catalog",
+        "entityRef": "component:default/shipping-service"
+      },
+      {
+        "title": "Initial CI build",
+        "url": "https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/onb-shipping-service-86c77b6b"
+      },
+      {
+        "title": "Development deployment",
+        "url": "https://shipping-service-dev.apps.ocp.box1.org"
+      },
+      {
+        "title": "Argo CD Application",
+        "url": "https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/shipping-service"
+      },
+      {
+        "title": "Validated onboarding PR",
+        "url": "https://github.com/box1-org/box1-gitops/pull/17"
+      }
+    ],
+    "text": [
+      {
+        "title": "Development service is ready",
+        "content": "The first image is built and deployed. No additional source push is needed.\nSubsequent main merges use the normal CI and development promotion pipeline.\nOnboarding status record: rhdh/box1-onboard-shipping-service.\n"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "step": "fetchApplication",
+      "message": "Finished step Generate application, tests, and pipelines"
+    },
+    {
+      "step": "publish",
+      "message": "Finished step Create or resume source repository"
+    },
+    {
+      "step": "fetchGitops",
+      "message": "Finished step Generate GitOps onboarding configuration"
+    },
+    {
+      "step": "onboarding",
+      "message": "Finished step Provision development, build and verify first deployment"
+    },
+    {
+      "step": "register",
+      "message": "Finished step Register service in Developer Hub"
+    }
+  ]
+}
