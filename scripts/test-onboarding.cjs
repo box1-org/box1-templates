@@ -76,3 +76,16 @@ test('Lease renewTime uses Kubernetes MicroTime precision',async()=>{
  const w=workflow({get:async()=>null,request:async(method,p,body)=>{lease=body;return body;}});
  await w.open();assert.match(lease.spec.renewTime,/\.\d{6}Z$/);assert.equal(lease.spec.leaseDurationSeconds,120);
 });
+const {ensureCatalog}=require('../plugins/box1-onboarding/workflow.cjs');
+function catalogContext(){return {input:{name},logger:{info(){}},output(){},getInitiatorCredentials:async()=>({principal:{type:'service'}})};}
+const ownedEntity={metadata:{annotations:{'github.com/project-slug':'box1-org/'+name}}};
+test('catalog replay reuses the owned entity without adding another location',async()=>{
+ let adds=0;await ensureCatalog({getEntityByRef:async()=>ownedEntity,addLocation:async()=>adds++},catalogContext());assert.equal(adds,0);
+});
+test('a pending duplicate catalog location is resolved without swallowing other errors',async()=>{
+ let reads=0;await ensureCatalog({getEntityByRef:async()=>++reads===1?undefined:ownedEntity,addLocation:async()=>{const e=new Error('exists');e.statusCode=409;throw e;}},catalogContext());assert.equal(reads,2);
+ await assert.rejects(ensureCatalog({getEntityByRef:async()=>undefined,addLocation:async()=>{const e=new Error('catalog unavailable');e.statusCode=503;throw e;}},catalogContext()),/catalog unavailable/);
+});
+test('catalog registration refuses an entity from another repository',async()=>{
+ await assert.rejects(ensureCatalog({getEntityByRef:async()=>({metadata:{annotations:{'github.com/project-slug':'other/repository'}}})},catalogContext()),/another source repository/);
+});

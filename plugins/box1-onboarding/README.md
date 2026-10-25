@@ -1,7 +1,7 @@
 # Development onboarding module
 
 Canonical source for the RHDH 1.9.7 / Backstage 1.45.3 dynamic backend module.
-It registers `box1:repository:ensure` and `box1:development:onboard`.
+It registers `box1:repository:ensure` `box1:development:onboard` and `box1:catalog:ensure`.
 No private runtime dependencies are bundled; the compatible Hub image supplies
 the declared peer dependencies. Run `npm run package:onboarding` from
 box1-templates to copy the three runtime files into the sibling box1-gitops
@@ -57,3 +57,9 @@ development-only scope, baseline protection, lease exclusion, readiness gates,
 credential/run creation ordering, completed-build reuse, and exact-check/App
 merge gating. Live acceptance uses POST `/api/scaffolder/v2/tasks` with the normal
 GitHub-authenticated user or existing backend automation authentication.
+
+Catalog registration reuses an existing matching entity. If only its source
+Location exists, a 409 is treated as a pending registration and the action waits
+for the matching entity. Other catalog errors propagate immediately; an entity
+with a different source repository fails validation. Completed-workflow replay
+therefore does not fail on duplicate catalog locations.

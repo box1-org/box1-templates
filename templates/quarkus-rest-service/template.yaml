@@ -79,10 +79,9 @@ spec:
         sourceRevision: ${{ steps.publish.output.commitHash }}
     - id: register
       name: Register service in Developer Hub
-      action: catalog:register
+      action: box1:catalog:ensure
       input:
-        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
-        catalogInfoPath: /catalog-info.yaml
+        name: ${{ parameters.name }}
   output:
     links:
       - title: Source repository

@@ -3,7 +3,21 @@
   "version": "1.1.0",
   "private": true,
   "main": "index.cjs",
-  "files": ["index.cjs", "workflow.cjs"],
-  "backstage": {"role": "backend-plugin-module", "pluginId": "scaffolder", "pluginPackage": "@backstage/plugin-scaffolder-backend", "supported-versions": "1.45.3"},
-  "peerDependencies": {"@backstage/backend-plugin-api": "^1.7.0", "@backstage/plugin-scaffolder-node": "*", "@backstage/integration": "^1.20.0", "yaml": "^2.0.0"}
+  "files": [
+    "index.cjs",
+    "workflow.cjs"
+  ],
+  "backstage": {
+    "role": "backend-plugin-module",
+    "pluginId": "scaffolder",
+    "pluginPackage": "@backstage/plugin-scaffolder-backend",
+    "supported-versions": "1.45.3"
+  },
+  "peerDependencies": {
+    "@backstage/backend-plugin-api": "^1.7.0",
+    "@backstage/plugin-scaffolder-node": "*",
+    "@backstage/integration": "^1.20.0",
+    "yaml": "^2.0.0",
+    "@backstage/plugin-catalog-node": "^1.20.0"
+  }
 }

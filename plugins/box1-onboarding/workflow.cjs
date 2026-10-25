@@ -351,4 +351,25 @@ class Workflow {
     finally{await this.close();}
   }
 }
-module.exports={Workflow,Kube,validateName,validateBundle,filesAt,blobSha};
+async function ensureCatalog(catalog,ctx) {
+  const name=validateName(ctx.input.name);
+  const ref='component:default/'+name;
+  const target='https://github.com/'+ORG+'/'+name+'/tree/main/catalog-info.yaml';
+  const options={credentials:await ctx.getInitiatorCredentials()};
+  const verify=entity=>{
+    check(entity.metadata.annotations?.['github.com/project-slug']===ORG+'/'+name,'Existing catalog entity belongs to another source repository');
+    ctx.output('entityRef',ref);ctx.output('catalogInfoUrl',target);
+  };
+  const existing=await catalog.getEntityByRef(ref,options);
+  if(existing){verify(existing);ctx.logger.info('Reusing existing catalog entity '+ref);return;}
+  try{await catalog.addLocation({type:'url',target},options);}
+  catch(error){if(error.statusCode!==409&&error.status!==409)throw error;ctx.logger.info('Catalog location already exists; observing entity processing');}
+  const deadline=Date.now()+60000;
+  while(Date.now()<deadline){
+    const entity=await catalog.getEntityByRef(ref,options);
+    if(entity){verify(entity);return;}
+    await pause(2000,undefined,{signal:ctx.signal});
+  }
+  throw new Error('Catalog registration did not resolve '+ref+' within 60 seconds; resume the same onboarding request');
+}
+module.exports={Workflow,Kube,validateName,validateBundle,filesAt,blobSha,ensureCatalog};
