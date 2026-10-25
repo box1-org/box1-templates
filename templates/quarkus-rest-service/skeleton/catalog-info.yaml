@@ -6,8 +6,9 @@ metadata:
   annotations:
     github.com/project-slug: box1-org/${{ values.name }}
     backstage.io/kubernetes-id: ${{ values.name }}
-    backstage.io/kubernetes-namespace: ${{ values.namespace }}
-    argocd/app-name: ${{ values.name }}
+    janus-idp.io/tekton: ${{ values.name }}
+    argocd/instance-name: openshift-gitops
+    argocd/app-selector: backstage.io/kubernetes-id=${{ values.name }}
     box1.org/template-version: "1.0.0"
   tags: [java, quarkus, maven, tekton, gitops]
   links:

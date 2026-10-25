@@ -4,6 +4,8 @@ kind: Application
 metadata:
   name: "${{ values.name }}"
   namespace: openshift-gitops
+  labels:
+    backstage.io/kubernetes-id: ${{ values.name }}
 spec:
   project: default
   source:

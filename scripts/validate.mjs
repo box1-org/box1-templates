@@ -75,8 +75,16 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
   const catalog = YAML.parse(fs.readFileSync(path.join(app, 'catalog-info.yaml'), 'utf8'));
   assert.equal(catalog.spec.owner, parameters.owner);
   assert.equal(catalog.metadata.name, name);
+  assert.equal(catalog.metadata.annotations['backstage.io/kubernetes-id'], name);
+  assert.equal(catalog.metadata.annotations['janus-idp.io/tekton'], name);
+  assert.equal(catalog.metadata.annotations['argocd/app-selector'], `backstage.io/kubernetes-id=${name}`);
+  assert.equal(catalog.metadata.annotations['argocd/instance-name'], 'openshift-gitops');
+  assert(!catalog.metadata.annotations['backstage.io/kubernetes-namespace']);
+  const argo = YAML.parse(fs.readFileSync(path.join(target, `gitops/applications/${name}.yaml`), 'utf8'));
+  assert.equal(argo.metadata.labels['backstage.io/kubernetes-id'], name);
   for (const file of ['.tekton/pull-request.yaml', '.tekton/release.yaml']) {
     const run = YAML.parse(fs.readFileSync(path.join(app, file), 'utf8'));
+    assert.equal(run.metadata.labels['backstage.io/kubernetes-id'], name);
     for (const task of run.spec.pipelineSpec.tasks) {
       assert.equal(task.taskRef.resolver, 'cluster');
       assert(run.metadata.generateName.length + 5 + 1 + task.name.length + 4 <= 63, 'Generated TaskRun/Pod name exceeds DNS label limit');

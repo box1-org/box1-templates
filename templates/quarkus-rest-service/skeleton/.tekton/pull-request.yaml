@@ -2,6 +2,8 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
+  labels:
+    backstage.io/kubernetes-id: ${{ values.name }}
   generateName: "${{ values.name }}-validate-"
   annotations:
     pipelinesascode.tekton.dev/on-event: "[pull_request]"
