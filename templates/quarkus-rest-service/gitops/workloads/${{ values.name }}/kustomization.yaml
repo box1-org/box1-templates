@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - route.yaml
+  - onboarding.yaml
+configMapGenerator:
+  - name: ${{ values.name }}-config
+    namespace: ${{ values.name }}
+    literals:
+      - GREETING_PREFIX=Hello from box1
+      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70.0 -Djava.io.tmpdir=/tmp
+images:
+  - name: ${{ values.name }}
+    newName: image-registry.openshift-image-registry.svc:5000/box1-ci/${{ values.name }}
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

@@ -1,0 +1,21 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description | dump }}
+  annotations:
+    github.com/project-slug: box1-org/${{ values.name }}
+    backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/kubernetes-namespace: ${{ values.name }}
+    argocd/app-name: ${{ values.name }}
+    box1.org/template-version: "1.0.0"
+  tags: [java, quarkus, maven, tekton, gitops]
+  links:
+    - url: https://${{ values.name }}.apps.ocp.box1.org
+      title: Application Route (after first release)
+    - url: https://github.com/box1-org/box1-gitops/tree/main/workloads/${{ values.name }}
+      title: Desired deployment configuration
+spec:
+  type: service
+  lifecycle: experimental
+  owner: ${{ values.owner | dump }}

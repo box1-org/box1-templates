@@ -1,0 +1,15 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.name }}
+spec:
+  host: ${{ values.name }}.apps.ocp.box1.org
+  to:
+    kind: Service
+    name: ${{ values.name }}
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

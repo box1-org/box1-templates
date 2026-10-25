@@ -1,0 +1,9 @@
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: box1-software-templates
+  description: Box1 platform-owned software templates
+spec:
+  type: url
+  targets:
+    - ./templates/quarkus-rest-service/template.yaml

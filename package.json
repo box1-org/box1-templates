@@ -1,0 +1,7 @@
+{
+  "name": "box1-templates-validation",
+  "private": true,
+  "type": "module",
+  "scripts": { "validate": "node scripts/validate.mjs" },
+  "devDependencies": { "ajv": "8.17.1", "nunjucks": "3.2.4", "yaml": "2.8.1" }
+}
