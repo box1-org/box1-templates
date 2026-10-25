@@ -22,30 +22,20 @@ Java package `org.box1` is deliberately stable across generated services.
 
 ## First deployment
 
-1. Open the GitOps onboarding PR linked by Developer Hub. Review and merge it
-   after its checks pass. Argo CD discovers `applications/${{ values.name }}.yaml`
-   through the root application and installs the manifests and PAC registration into development namespace
-   `${{ values.namespace }}`.
-2. Wait for the `${{ values.name }}` Argo Application to be Synced/Healthy and the
-   PAC Repository to exist in `box1-ci`. The initial Deployment has zero replicas
-   and a non-runnable placeholder digest until the first successful release.
-3. Push your first application change to `main` (or merge an application PR).
-   The repository's initial creation happens before PAC registration, so that
-   initial webhook is intentionally not relied upon. To test unchanged code,
-   `git commit --allow-empty -m "Start first delivery" && git push origin main`.
-4. Tekton tests, Jib builds/pushes a SHA-tagged image, and the central promotion
-   Task opens a GitOps PR with its immutable digest. Development merges after
-   required exact-head checks. Argo CD activates the Deployment and reconciles it.
-   The pipeline observes readiness and smoke-tests the public HTTPS Route.
+Create the service in Developer Hub. Its task tracks repository creation,
+validated development onboarding, platform readiness, initial CI, image promotion,
+and the verified first deployment. When the task completes, its output links to
+source, catalog, initial pipeline, Argo CD, and the running service. No manual
+onboarding merge or extra source commit is required.
 
-No developer runs `oc apply` or writes deployment YAML.
+If onboarding fails, the task reports the failed state and diagnostic link.
+Submit the same name, owner, visibility, and description to resume the recorded
+workflow. The repository and development resources are reused. A concurrent
+request for the same service is rejected while the first task holds its lease.
+The initial CI run is named `onb-${{ values.name }}-<revision>`; a retried failed
+build has a numbered suffix. Completed builds are reused.
 
 Route: https://${{ values.namespace }}.apps.ocp.box1.org
-
-```sh
-EXPECTED_GIT_REF="$(git rev-parse HEAD)" python3 scripts/smoke.py \
-  https://${{ values.namespace }}.apps.ocp.box1.org
-```
 
 ## Delivery and configuration
 

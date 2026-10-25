@@ -9,7 +9,7 @@ metadata:
     janus-idp.io/tekton: ${{ values.name }}
     argocd/instance-name: openshift-gitops
     argocd/app-selector: backstage.io/kubernetes-id=${{ values.name }}
-    box1.org/template-version: "1.0.0"
+    box1.org/template-version: "1.1.0"
   tags: [java, quarkus, maven, tekton, gitops]
   links:
     - url: https://${{ values.namespace }}.apps.ocp.box1.org/q/swagger-ui/

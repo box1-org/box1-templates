@@ -58,3 +58,23 @@ Generated repository names must be unique, 3–35 characters, DNS-safe, and may 
 start with `box1-`, `openshift-`, or `kube-`, or reuse platform names. Repository publishing fails on an
 existing name; it does not overwrite a repository. If a later step fails, inspect
 the task output and existing repository/PR before retrying with that name.
+
+## Zero-touch development onboarding (template 1.1.0)
+
+The Quarkus template creates or resumes its source repository and then runs the
+stateful development workflow from [plugins/box1-onboarding](plugins/box1-onboarding/README.md).
+It validates and merges the scoped GitOps onboarding PR, observes platform
+readiness, explicitly starts the first CI build, validates and merges the
+immutable development image promotion, and verifies the public deployment.
+No manual merge, arbitrary delay, or additional source push is required.
+
+The task output includes source, catalog, initial pipeline, deployment and Argo
+links. Failure messages identify the failed state; retry the same service
+parameters to resume. Existing unowned repositories and reserved baseline names
+are refused. State is recorded in `rhdh/box1-onboard-<name>` with a concurrency
+Lease. See the module guide for scope, credentials, retries and diagnostics.
+
+Maintain the runtime source here and run `npm run package:onboarding` to update
+the GitOps ConfigMap transport and rollout checksum in the sibling box1-gitops
+checkout. Validate with `npm run validate && npm run test:onboarding` and compare
+the action inputs with the installed Hub schemas before rollout.
