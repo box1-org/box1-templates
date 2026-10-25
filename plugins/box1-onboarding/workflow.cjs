@@ -169,7 +169,7 @@ class Workflow {
   }
   async pullRequest(stage,files) {
     const field=stage==='onboarding'?'onboardingPR':'promotionPR';
-    const branch='onboard/'+this.name+(stage==='onboarding'?'':'/first-release');
+    const branch=(stage==='onboarding'?'onboard/':'onboard-release/')+this.name;
     let pr=this.data[field]?await this.github(REPO+'/pulls/'+this.data[field].number):null;
     if(!pr) {
       const list=await this.github(REPO+'/pulls?state=all&head='+encodeURIComponent(ORG+':'+branch)+'&base=main');
