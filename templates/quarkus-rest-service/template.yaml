@@ -19,7 +19,7 @@ spec:
           type: string
           minLength: 3
           maxLength: 40
-          pattern: '^(?!quarkus-reference$)(?!box1-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          pattern: '^(?!quarkus-reference$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
           description: A unique lowercase name, used for the GitHub repository, namespace, image, and Route.
         description:
           title: Description

@@ -86,7 +86,7 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
   }
   console.log(`PASS ${name}: render, ownership, pipeline contract, namespaces, Kustomize${actionsFile ? ', installed actions' : ''}`);
 }
-for (const name of ['../escape', 'Uppercase', 'ab', 'box1-gitops', 'quarkus-reference', 'a--b', 'a-', 'a'.repeat(41)]) {
+for (const name of ['../escape', 'Uppercase', 'ab', 'box1-gitops', 'quarkus-reference', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(41)]) {
   assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
 }
 console.log('PASS rejected unsafe/reserved names');
