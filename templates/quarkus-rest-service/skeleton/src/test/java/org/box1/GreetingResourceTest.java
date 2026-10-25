@@ -35,6 +35,15 @@ class GreetingResourceTest {
     }
 
     @Test
+    void allowsDeveloperHubApiTester() {
+        given().header("Origin", "https://developer-hub.apps.ocp.box1.org")
+            .when().get("/api/greetings").then().statusCode(200)
+            .header("Access-Control-Allow-Origin", "https://developer-hub.apps.ocp.box1.org");
+        given().header("Origin", "https://untrusted.example")
+            .when().get("/api/greetings").then().statusCode(403);
+    }
+
+    @Test
     void publishesOpenApiAndPrometheusMetrics() {
         given().accept("application/json").when().get("/q/openapi").then().statusCode(200)
             .body("info.title", is("${{ values.name }} REST API"))

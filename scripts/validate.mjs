@@ -72,7 +72,15 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
     }
   }
   const app = path.join(target, 'application');
-  const catalog = YAML.parse(fs.readFileSync(path.join(app, 'catalog-info.yaml'), 'utf8'));
+  const catalogEntities = YAML.parseAllDocuments(fs.readFileSync(path.join(app, 'catalog-info.yaml'), 'utf8')).map(d => d.toJSON());
+  const catalog = catalogEntities.find(e => e.kind === 'Component');
+  const api = catalogEntities.find(e => e.kind === 'API');
+  assert.deepEqual(catalog.spec.providesApis, [name + '-api']);
+  assert.equal(api.metadata.name, name + '-api');
+  assert.equal(api.spec.type, 'openapi');
+  assert.equal(api.spec.owner, parameters.owner);
+  assert.equal(api.spec.definition.$text, `https://${name}-dev.apps.ocp.box1.org/q/openapi`);
+  assert(catalog.metadata.links.some(l => l.url === `https://${name}-dev.apps.ocp.box1.org/q/swagger-ui/`));
   assert.equal(catalog.spec.owner, parameters.owner);
   assert.equal(catalog.metadata.name, name);
   assert.equal(catalog.metadata.annotations['backstage.io/kubernetes-id'], name);
