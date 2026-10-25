@@ -47,7 +47,9 @@ deployed by the scaffolder or Tekton.
 Install Node.js 20.11+ and `kubectl`, then run `npm ci && npm run validate`. The validation uses the same Nunjucks variable
 delimiters as `fetch:template`, checks action inputs against the live exported
 schemas when available, and renders both application and GitOps manifests.
-Live acceptance evidence is recorded in `VERIFICATION.md`.
+Initial acceptance evidence is recorded in [VERIFICATION.md](VERIFICATION.md).
+The requested orders-service creation, redeployment, and rollback demonstration
+is recorded in [MILESTONE-DEMO.md](MILESTONE-DEMO.md).
 
 Maintain changes through PRs and retest a generated project when updating the
 Quarkus BOM, runtime digest, plugin versions, pipeline contract, or manifests.

@@ -1,0 +1,30 @@
+{
+  "stage": "baseline",
+  "timeUTC": "2026-10-25T04:41:31.291055+00:00",
+  "namespace": "orders-service-dev",
+  "gitopsRevision": "64eb3fe6f759347f569408602300b491ebd76f33",
+  "sourceRevision": "015316eaf4e00793353bd8ea77c12e8d9c7fef34",
+  "digest": "sha256:84348460978dd0c166a1352f550c6f30cfede87d046150e39928769a134d4a93",
+  "checks": {
+    "argoSynced": true,
+    "argoHealthy": true,
+    "desiredDigest": true,
+    "source": true,
+    "available": true,
+    "readyRuntimeDigest": true
+  },
+  "info": {
+    "name": "orders-service",
+    "version": "1.0.0-SNAPSHOT",
+    "javaVersion": 21,
+    "deliveryMode": "tekton-gitops",
+    "gitRef": "015316eaf4e00793353bd8ea77c12e8d9c7fef34"
+  },
+  "greeting": {
+    "message": "Hello from box1, OpenShift!",
+    "service": "orders-service"
+  },
+  "readyPods": [
+    "orders-service-7cb748cdb-s7nc5"
+  ]
+}
