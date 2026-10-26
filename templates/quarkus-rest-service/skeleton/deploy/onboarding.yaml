@@ -10,7 +10,7 @@ spec:
   settings:
     pipelinerun_provenance: default_branch
     github_app_token_scope_repos:
-    - box1-org/box1-gitops
+    - box1-org/box1-workloads-dev
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

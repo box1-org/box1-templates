@@ -55,13 +55,13 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
     const pac = resources.find(r => r.kind === 'Repository');
     assert.equal(pac.metadata.namespace, 'box1-ci');
     assert.equal(pac.spec.url, `https://github.com/box1-org/${name}`);
-    assert.deepEqual(pac.spec.settings.github_app_token_scope_repos, ['box1-org/box1-gitops']);
+    assert.deepEqual(pac.spec.settings.github_app_token_scope_repos, ['box1-org/box1-workloads-dev']);
     assert.equal(resources.find(r => r.kind === 'Role' && r.metadata.namespace === 'openshift-gitops').rules[0].resourceNames[0], name);
     assert(resources.some(r => r.kind === 'Route' && r.spec.host === `${name}-dev.apps.ocp.box1.org`));
     const text = fs.readFileSync(path.join(folder, 'kustomization.yaml'), 'utf8');
     assert.equal((text.match(/^    digest: sha256:[a-f0-9]{64}$/gm) ?? []).length, 1, 'Promotion digest replacement contract');
   }
-  const context = { parameters, steps: { publish: { output: { commitHash: 'a'.repeat(40), remoteUrl: `https://github.com/box1-org/${name}`, repoContentsUrl: `https://github.com/box1-org/${name}/blob/main` } }, onboarding: { output: { remoteUrl: 'https://github.com/box1-org/box1-gitops/pull/1' } }, register: { output: { entityRef: `component:default/${name}` } } } };
+  const context = { parameters, steps: { publish: { output: { commitHash: 'a'.repeat(40), remoteUrl: `https://github.com/box1-org/${name}`, repoContentsUrl: `https://github.com/box1-org/${name}/blob/main` } }, onboarding: { output: { remoteUrl: 'https://github.com/box1-org/box1-workloads-dev/pull/1' } }, register: { output: { entityRef: `component:default/${name}` } } } };
   for (const step of template.spec.steps) {
     const action = actions.find(a => a.id === step.action);
     if (actionsFile) assert(action, `Installed action missing: ${step.action}`);
@@ -108,7 +108,7 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
   }
   console.log(`PASS ${name}: render, ownership, pipeline contract, namespaces, Kustomize${actionsFile ? ', installed actions' : ''}`);
 }
-for (const name of ['../escape', 'Uppercase', 'ab', 'box1-gitops', 'quarkus-reference', 'orders-service', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(36)]) {
+for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quarkus-reference', 'orders-service', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(36)]) {
   assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
 }
 console.log('PASS rejected unsafe/reserved names');

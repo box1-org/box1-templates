@@ -79,3 +79,10 @@ Maintain the runtime source here and run `npm run package:onboarding` to update
 the GitOps ConfigMap transport and rollout checksum in the sibling box1-gitops
 checkout. Validate with `npm run validate && npm run test:onboarding` and compare
 the action inputs with the installed Hub schemas before rollout.
+
+## Development repository
+
+Onboarding and image promotion target `box1-org/box1-workloads-dev`. Argo CD
+reads that public repository anonymously over HTTPS. Shared Tasks and
+Developer Hub configuration remain in `box1-gitops`. The service skeleton retains
+its `deploy/` manifests; generated services continue to include them.

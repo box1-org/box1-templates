@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const { setTimeout: pause } = require('node:timers/promises');
 const YAML = require('yaml');
 const ORG = 'box1-org';
-const REPO = '/repos/box1-org/box1-gitops';
+const REPO = '/repos/box1-org/box1-workloads-dev';
 const ROOT = '/api/v1/namespaces/rhdh';
 const CI = '/api/v1/namespaces/box1-ci';
 const APPS = '/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications';
@@ -36,9 +36,9 @@ function validateBundle(files, name) {
     const m = obj.metadata;
     check(m && !m.generateName && !m.ownerReferences && !m.finalizers, 'Invalid generated metadata');
     if (obj.kind === 'Application') {
-      check(m.name === name && m.namespace === 'openshift-gitops' && obj.spec.project === 'default' && obj.spec.destination.namespace === ns && obj.spec.destination.server === 'https://kubernetes.default.svc' && obj.spec.source.repoURL === 'https://github.com/box1-org/box1-gitops.git' && obj.spec.source.path === `workloads/${name}` && obj.spec.source.targetRevision === 'main', 'Application must target its own development namespace');
+      check(m.name === name && m.namespace === 'openshift-gitops' && obj.spec.project === 'default' && obj.spec.destination.namespace === ns && obj.spec.destination.server === 'https://kubernetes.default.svc' && obj.spec.source.repoURL === 'https://github.com/box1-org/box1-workloads-dev.git' && obj.spec.source.path === `workloads/${name}` && obj.spec.source.targetRevision === 'main', 'Application must target its own development namespace');
     } else if (obj.kind === 'Namespace') check(m.name === ns, 'Only the development Namespace may be created');
-    else if (obj.kind === 'Repository') check(m.name === name && m.namespace === 'box1-ci' && obj.spec.url === `https://github.com/${ORG}/${name}` && same(obj.spec.settings.github_app_token_scope_repos, [ORG + '/box1-gitops']), 'Invalid PAC Repository');
+    else if (obj.kind === 'Repository') check(m.name === name && m.namespace === 'box1-ci' && obj.spec.url === `https://github.com/${ORG}/${name}` && same(obj.spec.settings.github_app_token_scope_repos, [ORG + '/box1-workloads-dev']), 'Invalid PAC Repository');
     else if (obj.kind === 'Role') {
       check(m.name === name + '-release-observer' && [ns,'openshift-gitops'].includes(m.namespace), 'Invalid observer Role');
       for (const rule of obj.rules) {
@@ -179,8 +179,8 @@ class Workflow {
       const ref=await this.github(REPO+'/git/ref/heads/'+branch,'GET',undefined,{missing:true});
       if(!ref) {
         const parent=(await this.github(REPO+'/git/ref/heads/main')).object.sha;
-        if(stage==='onboarding') for(const file of Object.keys(files)) check(await this.content('box1-gitops',file)===null,'GitOps resources already exist without this onboarding PR');
-        const sha=await this.commit('box1-gitops',parent,files,`Onboard ${this.name}: ${stage}`);
+        if(stage==='onboarding') for(const file of Object.keys(files)) check(await this.content('box1-workloads-dev',file)===null,'GitOps resources already exist without this onboarding PR');
+        const sha=await this.commit('box1-workloads-dev',parent,files,`Onboard ${this.name}: ${stage}`);
         await this.github(REPO+'/git/refs','POST',{ref:'refs/heads/'+branch,sha});
       }
       // A deterministic branch is accepted only after its content is verified below.
@@ -190,10 +190,10 @@ class Workflow {
     return this.merge(stage,pr,files);
   }
   async verifyPR(pr,files) {
-    check(pr.base.ref==='main'&&pr.base.repo.full_name===ORG+'/box1-gitops'&&pr.head.repo.full_name===ORG+'/box1-gitops'&&pr.body.includes(this.data.id),'PR identity changed');
+    check(pr.base.ref==='main'&&pr.base.repo.full_name===ORG+'/box1-workloads-dev'&&pr.head.repo.full_name===ORG+'/box1-workloads-dev'&&pr.body.includes(this.data.id),'PR identity changed');
     const changed=await this.github(REPO+'/pulls/'+pr.number+'/files?per_page=100');
     check(same(changed.map(f=>f.filename).sort(),Object.keys(files).sort()) && changed.every(f=>f.status!=='removed'&&!f.previous_filename),'PR has unexpected paths');
-    for(const [file,f] of Object.entries(files)) check(await this.content('box1-gitops',file,pr.head.sha)===f.content,'PR contents changed: '+file);
+    for(const [file,f] of Object.entries(files)) check(await this.content('box1-workloads-dev',file,pr.head.sha)===f.content,'PR contents changed: '+file);
   }
   async merge(stage,pr,files) {
     const field=stage==='onboarding'?'onboardingPR':'promotionPR';let retry=this.data[field]?.validationRetries||0;
@@ -322,7 +322,7 @@ class Workflow {
       updates[paths[1]].content=updates[paths[1]].content.replace(/^  replicas: 0$/m,'  replicas: 1').replace(/^    box1\.org\/build-pipelinerun: .+$/m,'    box1.org/build-pipelinerun: box1-ci/'+this.data.pipelineName);
       check(updates[paths[1]].content.includes('box1.org/source-revision: '+this.data.sourceRevision),'Initial source revision drifted');
       for(const file of paths) {
-        const live=await this.content('box1-gitops',file);
+        const live=await this.content('box1-workloads-dev',file);
         check(live===files[file].content||live===updates[file].content,'First-release GitOps content drifted: '+file);
       }
       await this.pullRequest('promotion',updates);

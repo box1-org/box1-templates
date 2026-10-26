@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/box1-org/box1-gitops.git
+    repoURL: https://github.com/box1-org/box1-workloads-dev.git
     targetRevision: main
     path: workloads/${{ values.name }}
   destination:

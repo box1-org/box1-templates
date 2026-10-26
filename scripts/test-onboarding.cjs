@@ -96,3 +96,20 @@ test('catalog failures keep provisioning incomplete and produce durable failure 
  await assert.rejects(w.run('registerCatalog'),/catalog unavailable/);assert.equal(w.data.phase,'FAILED');assert.equal(w.data.failedDuring,'CATALOG_REGISTERING');
  w.catalogService={getEntityByRef:async()=>ownedEntity};await w.run('registerCatalog');assert.equal(w.data.phase,'COMPLETE');assert.equal(w.data.catalogEntityRef,'component:default/'+name);
 });
+test('new onboarding writes only to development workload repository',async()=>{
+ const w=workflow();const files={['applications/'+name+'.yaml']:{content:'application',mode:'100644'}};
+ const calls=[];let committed;
+ w.content=async(repo)=>{assert.equal(repo,'box1-workloads-dev');return null;};
+ w.commit=async(repo,parent,actual)=>{assert.equal(repo,'box1-workloads-dev');assert.equal(parent,sha);assert.deepEqual(actual,files);committed=true;return 'b'.repeat(40);};
+ w.merge=async()=>{};
+ w.github=async(p,method,body)=>{
+  assert(p.startsWith('/repos/box1-org/box1-workloads-dev/'),'Unexpected repository: '+p);calls.push(p);
+  if(p.includes('/pulls?'))return [];
+  if(p.endsWith('/git/ref/heads/onboard/'+name))return null;
+  if(p.endsWith('/git/ref/heads/main'))return {object:{sha}};
+  if(p.endsWith('/git/refs')){assert(committed);return {};}
+  if(p.endsWith('/pulls')&&method==='POST')return {number:1,html_url:'https://github.com/box1-org/box1-workloads-dev/pull/1',head:{sha:'b'.repeat(40)}};
+  throw Error('Unexpected '+p);
+ };
+ await w.pullRequest('onboarding',files);assert(calls.length>=4);assert.match(w.data.onboardingPR.url,/box1-workloads-dev/);
+});
