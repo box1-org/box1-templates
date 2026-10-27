@@ -1,3 +1,5 @@
+> **Retired historical record.** The orders-service demo is preserved for evidence only; it is no longer an operational deployment. See [the decommission runbook](https://github.com/box1-org/box1-docs/blob/document-service-decommission/runbooks/service-decommission.md).
+
 # Orders service milestone demonstration — 2026-10-25
 
 The requested sequence uses `orders-service`, namespace `orders-service-dev`, and

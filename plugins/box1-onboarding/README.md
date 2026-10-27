@@ -18,7 +18,7 @@ the same name. Retry with the identical name, owner, visibility and description;
 unmanaged existing repositories and reserved baseline names are rejected.
 
 States: REQUESTED → REPOSITORY_READY → ONBOARDING_PR_OPEN → ONBOARDING_MERGED →
-PLATFORM_READY → BUILD_RUNNING → IMAGE_BUILT → PROMOTION_PR_OPEN →
+PLATFORM_APPS_SYNCED → PLATFORM_READY → BUILD_RUNNING → IMAGE_BUILT → PROMOTION_PR_OPEN →
 PROMOTION_MERGED → DEPLOYMENT_READY → CATALOG_REGISTERING → COMPLETE. FAILED retains the prior successful state, failed
 stage, diagnostic message, timestamps and resource links. State transitions are
 visible in scaffolder task logs. Waits observe bounded API conditions; polling
@@ -32,6 +32,11 @@ fresh validation; then the task fails explicitly. Other environments and the
 existing orders-service baseline cannot be selected. Repo creation and merges
 use the configured Hub GitHub App; all installation tokens are short lived.
 
+After the onboarding merge, the workflow explicitly requests and verifies sync
+of the `box1-workloads-dev` Argo Application, waits for the new service
+Application to be created, then explicitly requests and verifies sync of that
+service Application. Both operations use the Kubernetes API, preserve active
+operations, and require the onboarding merge revision to become Synced/Healthy.
 The initial build explicitly reuses `box1-quarkus-maven`, after Namespace,
 ServiceAccounts, registry bindings, observer roles, PAC registration, Application
 sync and Deployment existence are observed. Its credential is a fresh one-hour

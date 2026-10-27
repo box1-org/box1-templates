@@ -10,6 +10,8 @@ const REPO = '/repos/box1-org/box1-workloads-dev';
 const ROOT = '/api/v1/namespaces/rhdh';
 const CI = '/api/v1/namespaces/box1-ci';
 const APPS = '/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications';
+const WORKLOADS_APP = 'box1-workloads-dev';
+const WORKLOADS_REPO = 'https://github.com/box1-org/box1-workloads-dev';
 const LEASES = '/apis/coordination.k8s.io/v1/namespaces/rhdh/leases';
 const NAME = /^(?!quarkus-reference$)(?!orders-service$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 function check(ok, message) { if (!ok) throw new Error(message); }
@@ -121,6 +123,65 @@ class Workflow {
       await pause(5000,undefined,{signal:this.ctx.signal});
     }
     throw new Error('Timed out waiting for '+label+'; retry the same service to resume. Status: rhdh/'+this.key);
+  }
+  async syncApplication(applicationName, expectedRevision, label) {
+    check(/^[a-f0-9]{40}$/.test(expectedRevision), 'GitOps merge commit is missing or invalid');
+    const path=APPS+'/'+applicationName;
+    const normalize=value=>(value||'').replace(/\/$/,'').replace(/\.git$/,'');
+    const revisionMatches=(status,source)=>{
+      const observed=status?.sync?.revision||status?.sync?.revisions;
+      if(normalize(source?.repoURL)!==WORKLOADS_REPO)return false;
+      return Array.isArray(observed)?observed.includes(expectedRevision):observed===expectedRevision;
+    };
+    const details=app=>{
+      const status=app?.status||{},operation=status.operationState||{},sync=status.sync||{},health=status.health||{};
+      const messages=[...(status.conditions||[]).map(c=>c.message).filter(Boolean),operation.message].filter(Boolean);
+      return `Argo ${applicationName} sync did not complete: expected revision ${expectedRevision}, observed ${sync.revision||JSON.stringify(sync.revisions)||'none'}, sync ${sync.status||'unknown'}, health ${health.status||'unknown'}, operation ${operation.phase||'none'}${messages.length?`, ${messages.join('; ')}`:''}`;
+    };
+    const observe=async()=>{
+      const app=await this.kube.get(path);if(!app)return `${applicationName} Application exists`;
+      const source=app.spec?.source||(app.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
+      const operation=app.status?.operationState||{};const active=['Running','Terminating'].includes(operation.phase);
+      if(active)return `${applicationName} has an active Argo operation`;
+      if(['Error','Failed'].includes(operation.phase))throw new Error(details(app));
+      if(source&&app.status?.sync?.status==='Synced'&&app.status?.health?.status==='Healthy'&&revisionMatches(app.status,source))return true;
+      return `${applicationName} is ${app.status?.sync?.status||'not synced'}/${app.status?.health?.status||'not healthy'} at ${app.status?.sync?.revision||'no revision'}`;
+    };
+    await this.wait(label+' before sync',300,observe);
+    const app=await this.kube.get(path);check(app,`${applicationName} Application does not exist`);
+    const source=app.spec?.source||(app.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
+    check(source&&normalize(source.repoURL)===WORKLOADS_REPO,`${applicationName} Application does not track ${WORKLOADS_REPO}`);
+    const operation=app.status?.operationState||{};
+    if(app.status?.sync?.status==='Synced'&&app.status?.health?.status==='Healthy'&&revisionMatches(app.status,source)){
+      this.ctx.logger.info(`${applicationName} already Synced/Healthy at ${app.status.sync.revision||JSON.stringify(app.status.sync.revisions)}`);return;
+    }
+    const requestStarted=Date.now();
+    const sync={syncStrategy:{hook:{}}};
+    if(source) {
+      if(app.spec?.sources?.length) sync.revisions=app.spec.sources.map(item=>normalize(item.repoURL)===WORKLOADS_REPO?expectedRevision:(item.targetRevision||'HEAD'));
+      else sync.revision=expectedRevision;
+    }
+    await this.kube.request('PATCH',path,{operation:{initiatedBy:{username:'box1-rhdh'},sync}});
+    await this.wait(label+' requested Argo sync',300,async()=>{
+      const current=await this.kube.get(path);if(!current)return details(current);
+      const state=current.status||{},op=state.operationState||{};
+      if(['Error','Failed'].includes(op.phase))throw new Error(details(current));
+      const started=op.startedAt?Date.parse(op.startedAt):0;
+      const sourceNow=current.spec?.source||(current.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
+      if(op.phase==='Succeeded'&&started>=requestStarted-5000&&state.sync?.status==='Synced'&&state.health?.status==='Healthy'&&revisionMatches(state,sourceNow))return true;
+      return details(current);
+    });
+    this.ctx.logger.info(`${applicationName} sync completed at ${expectedRevision}`);
+  }
+  async syncNewServiceApplications() {
+    const revision=this.data.onboardingPR?.mergeCommit;
+    await this.syncApplication(WORKLOADS_APP,revision,'box1-workloads-dev');
+    await this.wait('new service Argo Application creation',300,async()=>{
+      const app=await this.kube.get(APPS+'/'+this.name);
+      return app||this.name+' Application exists';
+    });
+    await this.syncApplication(this.name,revision,this.name);
+    await this.save('PLATFORM_APPS_SYNCED',{applicationsSyncedAt:new Date().toISOString()});
   }
   async content(repo,file,ref='main') { const result=await this.github(`/repos/${ORG}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`,'GET',undefined,{missing:true});return result?Buffer.from(result.content,'base64').toString():null; }
   async repository() {
@@ -312,6 +373,7 @@ class Workflow {
     const files=validateBundle(await filesAt(path.join(this.ctx.workspacePath,'gitops')),this.name);
     // Existing checkpoints reconcile external state instead of blindly replaying mutations.
     if(!this.data.onboardingPR?.merged)await this.pullRequest('onboarding',files);
+    if(!this.data.applicationsSyncedAt)await this.syncNewServiceApplications();
     await this.platformReady();
     if(!this.data.imageDigest)await this.build();
     if(!this.data.promotionPR?.merged) {

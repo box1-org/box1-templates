@@ -1,3 +1,4 @@
+// Retired historical fixture: these names validate rejection of previously used demo identifiers.
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const YAML=require('yaml');
 const {Workflow,validateName,validateBundle,filesAt}=require('../plugins/box1-onboarding/workflow.cjs');
 const name='orders-api',id='9ae74f64-b93b-4d70-a6fe-4a223436b6f0',sha='a'.repeat(40),digest='sha256:'+'b'.repeat(64);
@@ -21,6 +22,24 @@ test('readiness gates do not advance while namespace or permissions are missing'
  const w=workflow({get:async()=>null});let observed;
  w.wait=async(label,seconds,fn)=>{observed=await fn();throw new Error('pending readiness');};
  await assert.rejects(w.platformReady(),/pending readiness/);assert.match(observed,/Namespace Active/);assert.notEqual(w.data.phase,'PLATFORM_READY');
+});
+test('new service explicitly syncs the workload index and service Application',async()=>{
+ const mergeCommit='c'.repeat(40),requests=[];let service=null;
+ const source={repoURL:'https://github.com/box1-org/box1-workloads-dev.git',path:'applications',targetRevision:'main'};
+ const app=(name,revision,status='OutOfSync')=>({metadata:{name},spec:{source:{...source,path:name==='box1-workloads-dev'?'applications':'workloads/'+name}},status:{sync:{status,revision},health:{status:'Healthy'},operationState:{phase:'Succeeded',startedAt:new Date(Date.now()-60000).toISOString()}}});
+ let root=app('box1-workloads-dev','old'.repeat(10));
+ const kube={get:async p=>p.endsWith('/box1-workloads-dev')?root:p.endsWith('/orders-api')?service:null,request:async(method,p,body)=>{
+   requests.push({method,p,body});assert.equal(method,'PATCH');
+   const updated=app(p.endsWith('/box1-workloads-dev')?'box1-workloads-dev':'orders-api',mergeCommit,'Synced');updated.status.health.status='Healthy';updated.status.operationState={phase:'Succeeded',startedAt:new Date().toISOString()};
+   if(p.endsWith('/box1-workloads-dev')){root=updated;service=app('orders-api','old'.repeat(10));}else service=updated;
+   return updated;
+ }};
+ const w=workflow(kube);w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};
+ w.wait=async(label,_seconds,fn)=>{if(label.includes('before sync'))return;const result=await fn();if(label.includes('creation'))assert(result);else assert.equal(result,true);};
+ await w.syncNewServiceApplications();
+ assert.deepEqual(requests.map(r=>r.p),['/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/box1-workloads-dev','/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/orders-api']);
+ assert(requests.every(r=>r.body.operation.initiatedBy.username==='box1-rhdh'));
+ assert(requests.every(r=>r.body.operation.sync.revision===mergeCommit));
 });
 test('persist Secret before creating initial CI, and resume the same completed run',async()=>{
  const events=[];let run=null,secret=null;
