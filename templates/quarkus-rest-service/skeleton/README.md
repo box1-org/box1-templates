@@ -8,6 +8,7 @@ Optional integrations selected at creation: PostgreSQL = `${{ values.postgres }}
 The integrations add their Quarkus extensions and GitOps resources. PostgreSQL creates a
 service-owned Deployment, Service, PVC, and Secret placeholder; replace its password before
 syncing. Kafka creates a service-owned `KafkaTopic` on the shared `box1-kafka` Strimzi cluster.
+The broker address is `box1-kafka-kafka-bootstrap.box1-kafka.svc:9092`.
 
 ## Local development
 

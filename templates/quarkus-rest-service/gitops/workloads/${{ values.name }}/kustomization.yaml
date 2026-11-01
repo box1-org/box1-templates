@@ -23,7 +23,7 @@ configMapGenerator:
       - QUARKUS_DATASOURCE_USERNAME=${{ values.name | replace('-', '_') }}
 {% endif %}
 {% if values.kafka %}
-      - KAFKA_BOOTSTRAP_SERVERS=box1-kafka-kafka-bootstrap:9092
+      - KAFKA_BOOTSTRAP_SERVERS=box1-kafka-kafka-bootstrap.box1-kafka.svc:9092
 {% endif %}
 images:
   - name: ${{ values.name }}
