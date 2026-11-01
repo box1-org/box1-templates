@@ -60,7 +60,7 @@ ownership records resume their previous repositories, PRs and initial builds.
 Catalog registration is idempotent, and completion requires the catalog entry
 as well as the verified deployment.
 
-## Zero-touch development onboarding (template 1.1.0)
+## Zero-touch development onboarding (template 1.2.0)
 
 The Quarkus template creates or resumes its source repository and then runs the
 stateful development workflow from [plugins/box1-onboarding](plugins/box1-onboarding/README.md).

@@ -33,14 +33,17 @@ function renderTree(from, to, values) {
   }
 }
 
-for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smoke', 'a'.repeat(35)]) {
-  const parameters = { name, description: 'A Quarkus REST service on OpenShift', owner: 'user:default/mike4263', visibility: 'private' };
+for (const [name, integrations] of [['orders-api', { postgres: false, kafka: false }], ['inventory-service', { postgres: true, kafka: false }], ['quarkus-golden-path-smoke', { postgres: false, kafka: true }], ['a'.repeat(35), { postgres: true, kafka: true }]]) {
+  const parameters = { name, description: 'A Quarkus REST service on OpenShift', owner: 'user:default/mike4263', visibility: 'private', ...integrations };
   assert(checkForm(parameters), JSON.stringify(checkForm.errors));
   const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'a'.repeat(40) };
   const target = path.join(root, '.validation', name);
   fs.rmSync(target, { recursive: true, force: true });
   renderTree(path.join(source, 'skeleton'), path.join(target, 'application'), values);
   renderTree(path.join(source, 'gitops'), path.join(target, 'gitops'), values);
+  const pom = fs.readFileSync(path.join(target, 'application/pom.xml'), 'utf8');
+  assert.equal(pom.includes('quarkus-jdbc-postgresql'), Boolean(parameters.postgres));
+  assert.equal(pom.includes('quarkus-smallrye-reactive-messaging-kafka'), Boolean(parameters.kafka));
   for (const folder of [path.join(target, 'application/deploy'), path.join(target, `gitops/workloads/${name}`)]) {
     const resources = YAML.parseAllDocuments(execFileSync('kubectl', ['kustomize', folder], { encoding: 'utf8' })).map(d => d.toJSON());
     const deployment = resources.find(r => r.kind === 'Deployment');
@@ -49,6 +52,21 @@ for (const name of ['orders-api', 'inventory-service', 'quarkus-golden-path-smok
     assert.equal(deployment.spec.template.metadata.labels['backstage.io/kubernetes-id'], name);
     assert.equal(deployment.spec.replicas, 0);
     assert.equal(deployment.spec.template.spec.containers[0].image, `image-registry.openshift-image-registry.svc:5000/box1-ci/${name}@sha256:${'0'.repeat(64)}`);
+    if (folder.includes('/gitops/')) {
+      const postgres = resources.find(r => r.kind === 'Deployment' && r.metadata.name === `${name}-postgres`);
+      const postgresSecret = resources.find(r => r.kind === 'Secret' && r.metadata.name === `${name}-postgres`);
+      const postgresPvc = resources.find(r => r.kind === 'PersistentVolumeClaim' && r.metadata.name === `${name}-postgres-data`);
+      const kafkaTopic = resources.find(r => r.kind === 'KafkaTopic' && r.metadata.name === `${name}-events`);
+      assert.equal(Boolean(postgres), Boolean(parameters.postgres));
+      assert.equal(Boolean(postgresSecret), Boolean(parameters.postgres));
+      assert.equal(Boolean(postgresPvc), Boolean(parameters.postgres));
+      assert.equal(Boolean(kafkaTopic), Boolean(parameters.kafka));
+      if (parameters.postgres) {
+        assert.equal(postgres.spec.template.spec.containers[0].envFrom[0].secretRef.name, `${name}-postgres`);
+        assert.equal(postgresPvc.spec.resources.requests.storage, '5Gi');
+        assert.equal(postgresSecret.stringData.POSTGRESQL_PASSWORD, 'replace-before-sync');
+      }
+    }
     const cm = resources.find(r => r.kind === 'ConfigMap');
     assert.equal(cm.metadata.namespace, name + '-dev');
     assert.equal(deployment.spec.template.spec.containers[0].envFrom[0].configMapRef.name, cm.metadata.name);
