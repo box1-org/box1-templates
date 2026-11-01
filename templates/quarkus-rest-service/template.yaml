@@ -6,7 +6,7 @@ metadata:
   description: Java 21 REST service with automatic development provisioning, first build, and verified deployment.
   tags: [quarkus, java, tekton, openshift, golden-path]
   annotations:
-    box1.org/template-version: "1.1.0"
+    box1.org/template-version: "1.2.0"
 spec:
   owner: user:default/mike4263
   type: service
@@ -41,6 +41,16 @@ spec:
           type: string
           enum: [private, public]
           default: private
+        postgres:
+          title: Include PostgreSQL support
+          type: boolean
+          default: false
+          description: Add the Quarkus PostgreSQL JDBC extension for a service-owned database.
+        kafka:
+          title: Include Kafka support
+          type: boolean
+          default: false
+          description: Add the Quarkus SmallRye Reactive Messaging Kafka extension.
   steps:
     - id: fetchApplication
       name: Generate application, tests, and pipelines
@@ -53,6 +63,8 @@ spec:
           namespace: ${{ parameters.name }}-dev
           description: ${{ parameters.description }}
           owner: ${{ parameters.owner }}
+          postgres: ${{ parameters.postgres }}
+          kafka: ${{ parameters.kafka }}
     - id: publish
       name: Create or resume source repository
       action: box1:repository:ensure
@@ -71,6 +83,8 @@ spec:
           name: ${{ parameters.name }}
           namespace: ${{ parameters.name }}-dev
           sourceRevision: ${{ steps.publish.output.commitHash }}
+          postgres: ${{ parameters.postgres }}
+          kafka: ${{ parameters.kafka }}
     - id: onboarding
       name: Provision development, build and verify first deployment
       action: box1:development:onboard

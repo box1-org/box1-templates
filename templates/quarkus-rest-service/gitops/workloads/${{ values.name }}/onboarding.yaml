@@ -61,6 +61,104 @@ subjects:
 - kind: ServiceAccount
   name: ci-observe
   namespace: box1-ci
+{% if values.postgres %}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${{ values.name }}-postgres
+  namespace: ${{ values.namespace }}
+  annotations:
+    box1.org/secret-bootstrap: replace-before-sync
+type: Opaque
+stringData:
+  POSTGRESQL_DATABASE: ${{ values.name | replace('-', '_') }}
+  POSTGRESQL_USER: ${{ values.name | replace('-', '_') }}
+  POSTGRESQL_PASSWORD: replace-before-sync
+  QUARKUS_DATASOURCE_PASSWORD: replace-before-sync
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${{ values.name }}-postgres-data
+  namespace: ${{ values.namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}-postgres
+  namespace: ${{ values.namespace }}
+  labels:
+    app.kubernetes.io/name: ${{ values.name }}-postgres
+    app.kubernetes.io/part-of: ${{ values.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${{ values.name }}-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: registry.redhat.io/rhel9/postgresql-15@sha256:95e94264e14133d80ddbc9980eeebf4806d6668a61cbc1917e57efa1941b516b
+          ports:
+            - name: postgres
+              containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: ${{ values.name }}-postgres
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -U \"$POSTGRESQL_USER\" -d \"$POSTGRESQL_DATABASE\""]
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ${{ values.name }}-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${{ values.name }}-postgres
+  namespace: ${{ values.namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{% endif %}
+{% if values.kafka %}
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: ${{ values.name }}-events
+  namespace: ${{ values.namespace }}
+  labels:
+    strimzi.io/cluster: box1-kafka
+    app.kubernetes.io/part-of: ${{ values.name }}
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 604800000
+    cleanup.policy: delete
+{% endif %}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

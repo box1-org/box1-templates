@@ -52,6 +52,16 @@ function validateBundle(files, name) {
       const puller = m.name === name + '-image-puller';
       check(puller ? m.namespace === 'box1-ci' && obj.roleRef.name === 'system:image-puller' && obj.roleRef.kind === 'ClusterRole' : m.name === name + '-release-observer' && [ns,'openshift-gitops'].includes(m.namespace) && obj.roleRef.name === name + '-release-observer' && obj.roleRef.kind === 'Role', 'Invalid binding');
       check(same(obj.subjects, [{ kind:'ServiceAccount', name:puller ? name : 'ci-observe', namespace:puller ? ns : 'box1-ci' }]), 'Invalid binding subject');
+    } else if (obj.kind === 'Deployment' && m.name === name + '-postgres') {
+      check(m.namespace === ns && obj.spec.replicas === 1 && obj.spec.selector.matchLabels['app.kubernetes.io/name'] === name + '-postgres', 'Invalid PostgreSQL Deployment');
+    } else if (obj.kind === 'Service' && m.name === name + '-postgres') {
+      check(m.namespace === ns && obj.spec.selector['app.kubernetes.io/name'] === name + '-postgres', 'Invalid PostgreSQL Service');
+    } else if (obj.kind === 'PersistentVolumeClaim' && m.name === name + '-postgres-data') {
+      check(m.namespace === ns && obj.spec.resources.requests.storage === '5Gi' && same(obj.spec.accessModes,['ReadWriteOnce']), 'Invalid PostgreSQL PVC');
+    } else if (obj.kind === 'Secret' && m.name === name + '-postgres') {
+      check(m.namespace === ns && obj.type === 'Opaque' && obj.stringData?.POSTGRESQL_PASSWORD === 'replace-before-sync', 'Invalid PostgreSQL Secret placeholder');
+    } else if (obj.kind === 'KafkaTopic' && m.name === name + '-events') {
+      check(m.namespace === ns && obj.metadata.labels?.['strimzi.io/cluster'] === 'box1-kafka' && obj.spec.partitions === 3 && obj.spec.replicas === 1, 'Invalid Kafka topic');
     } else {
       check(['ServiceAccount','Deployment','Service','Route'].includes(obj.kind) && m.name === name && m.namespace === ns, 'Unexpected generated resource');
       if (obj.kind === 'Deployment') check(obj.spec.replicas === 0 && obj.spec.template.spec.serviceAccountName === name && obj.spec.template.spec.containers.length === 1 && obj.spec.template.spec.containers[0].image === name, 'Unbuilt Deployment must remain inactive');

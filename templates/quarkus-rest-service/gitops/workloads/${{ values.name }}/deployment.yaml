@@ -41,6 +41,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: ${{ values.name }}-config
+{% if values.postgres %}
+            - secretRef:
+                name: ${{ values.name }}-postgres
+{% endif %}
           resources:
             requests:
               cpu: 100m
