@@ -12,6 +12,9 @@ resources:
   - service.yaml
   - route.yaml
   - onboarding.yaml
+{% if values.postgres %}
+  - postgres.yaml
+{% endif %}
 configMapGenerator:
   - name: ${{ values.name }}-config
     namespace: ${{ values.namespace }}
@@ -21,9 +24,6 @@ configMapGenerator:
 {% if values.postgres %}
       - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://${{ values.name }}-postgres:5432/${{ values.name | replace('-', '_') }}
       - QUARKUS_DATASOURCE_USERNAME=${{ values.name | replace('-', '_') }}
-{% endif %}
-{% if values.kafka %}
-      - KAFKA_BOOTSTRAP_SERVERS=box1-kafka-kafka-bootstrap.box1-kafka.svc:9092
 {% endif %}
 images:
   - name: ${{ values.name }}

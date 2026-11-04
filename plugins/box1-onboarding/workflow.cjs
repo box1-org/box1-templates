@@ -31,8 +31,11 @@ async function filesAt(root, prefix = '') {
 function validateBundle(files, name) {
   validateName(name);
   const ns = name + '-dev';
-  const expected = [`applications/${name}.yaml`, ...['namespace','serviceaccount','deployment','service','route','onboarding','kustomization'].map(f => `workloads/${name}/${f}.yaml`)];
-  check(same(Object.keys(files).sort(), expected.sort()), 'Onboarding must add exactly one Application and its seven development workload files');
+  const base = ['namespace','serviceaccount','deployment','service','route','onboarding','kustomization'];
+  const postgresFile = files[`workloads/${name}/postgres.yaml`];
+  const hasPostgres = Boolean(postgresFile?.content.trim());
+  const expected = [`applications/${name}.yaml`, ...base.map(f => `workloads/${name}/${f}.yaml`), ...(postgresFile ? [`workloads/${name}/postgres.yaml`] : [])];
+  check(same(Object.keys(files).sort(), expected.sort()), 'Onboarding must add one Application and the scoped development workload files');
   const objects = Object.entries(files).filter(([p]) => !p.endsWith('kustomization.yaml')).flatMap(([,f]) => YAML.parseAllDocuments(f.content).map(d => d.toJSON()));
   for (const obj of objects) {
     const m = obj.metadata;
@@ -60,8 +63,8 @@ function validateBundle(files, name) {
       check(m.namespace === ns && obj.spec.resources.requests.storage === '5Gi' && same(obj.spec.accessModes,['ReadWriteOnce']), 'Invalid PostgreSQL PVC');
     } else if (obj.kind === 'Secret' && m.name === name + '-postgres') {
       check(m.namespace === ns && obj.type === 'Opaque' && obj.stringData?.POSTGRESQL_PASSWORD === 'replace-before-sync', 'Invalid PostgreSQL Secret placeholder');
-    } else if (obj.kind === 'KafkaTopic' && m.name === name + '-events') {
-      check(m.namespace === ns && obj.metadata.labels?.['strimzi.io/cluster'] === 'box1-kafka' && obj.spec.partitions === 3 && obj.spec.replicas === 1, 'Invalid Kafka topic');
+    } else if (obj.kind === 'KafkaTopic') {
+      throw new Error('KafkaTopic resources are not allowed in service onboarding');
     } else {
       check(['ServiceAccount','Deployment','Service','Route'].includes(obj.kind) && m.name === name && m.namespace === ns, 'Unexpected generated resource');
       if (obj.kind === 'Deployment') check(obj.spec.replicas === 0 && obj.spec.template.spec.serviceAccountName === name && obj.spec.template.spec.containers.length === 1 && obj.spec.template.spec.containers[0].image === name, 'Unbuilt Deployment must remain inactive');
@@ -69,7 +72,8 @@ function validateBundle(files, name) {
     }
   }
   const k = YAML.parse(files[`workloads/${name}/kustomization.yaml`].content);
-  check(same(k.resources,['namespace.yaml','serviceaccount.yaml','deployment.yaml','service.yaml','route.yaml','onboarding.yaml']) && k.configMapGenerator?.length === 1 && k.configMapGenerator[0].namespace === ns && k.configMapGenerator[0].name === name + '-config' && !k.bases && !k.components && !k.patches && !k.generators && !k.transformers && k.images?.length === 1 && k.images[0].newName === `image-registry.openshift-image-registry.svc:5000/box1-ci/${name}` && k.images[0].digest === 'sha256:' + '0'.repeat(64), 'Invalid initial Kustomization');
+  const expectedResources = ['namespace.yaml','serviceaccount.yaml','deployment.yaml','service.yaml','route.yaml','onboarding.yaml', ...(hasPostgres ? ['postgres.yaml'] : [])];
+  check(same(k.resources, expectedResources) && k.configMapGenerator?.length === 1 && k.configMapGenerator[0].namespace === ns && k.configMapGenerator[0].name === name + '-config' && !k.bases && !k.components && !k.patches && !k.generators && !k.transformers && k.images?.length === 1 && k.images[0].newName === `image-registry.openshift-image-registry.svc:5000/box1-ci/${name}` && k.images[0].digest === 'sha256:' + '0'.repeat(64), 'Invalid initial Kustomization');
   return files;
 }
 class Kube {
