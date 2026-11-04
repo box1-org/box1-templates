@@ -49,6 +49,9 @@ test('build barrier ignores unrelated platform readiness conditions',async()=>{
  const calls=[];const w=workflow({get:async p=>{calls.push(p);if(p.includes('/namespaces/orders-api-dev'))return {status:{phase:'Active'}};if(p.includes('/serviceaccounts/ci-build'))return {};if(p.includes('ci-build-image-builder'))return {roleRef:{name:'system:image-builder'},subjects:[{name:'ci-build',namespace:'box1-ci'}]};return null;}});
  w.wait=async(_label,_seconds,fn)=>fn();await w.buildBarrier();assert.equal(calls.length,3);assert(calls.every(p=>!p.includes('pipelinesascode')&&!p.includes('argoproj')));
 });
+test('Argo sync PATCH uses Kubernetes merge-patch content type',async()=>{
+ const source=await fs.readFile(path.resolve(__dirname,'../plugins/box1-onboarding/workflow.cjs'),'utf8');assert.match(source,/method==='PATCH'\?'application\/merge-patch\+json':'application\/json'/);
+});
 test('delivery starts readiness observation before the initial build completes',async()=>{
  const w=workflow();const events=[];w.provision=async()=>events.push('provision');w.syncNewServiceApplications=async()=>events.push('sync');w.platformReady=async()=>{events.push('readiness-start');await new Promise(resolve=>setTimeout(resolve,1));events.push('readiness-done');};w.buildBarrier=async()=>events.push('barrier');w.buildPhase=async()=>{events.push('build-start');await new Promise(resolve=>setTimeout(resolve,3));events.push('build-done');};w.promote=async()=>events.push('promote');w.verify=async()=>events.push('verify');w.data={...w.data};await w.delivery();assert(events.indexOf('readiness-start')<events.indexOf('build-done'));assert(events.indexOf('build-start')<events.indexOf('readiness-done'));
 });
