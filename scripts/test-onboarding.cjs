@@ -70,6 +70,11 @@ test('new service explicitly syncs the workload index and service Application',a
  assert(requests.every(r=>r.body.operation.initiatedBy.username==='box1-rhdh'));
  assert(requests.every(r=>r.body.operation.sync.revision===mergeCommit));
 });
+test('existing healthy service Application skips a duplicate sync request',async()=>{
+ const mergeCommit='c'.repeat(40),requests=[];const app=(name)=>({spec:{source:{repoURL:'https://github.com/box1-org/box1-workloads-dev.git',path:'workloads/'+name}},status:{sync:{status:'Synced',revision:mergeCommit},health:{status:'Healthy'},operationState:{phase:'Succeeded'}}});
+ const kube={get:async p=>p.endsWith('/box1-workloads-dev')?app('box1-workloads-dev'):app(name),request:async()=>{requests.push('PATCH');return {};}};
+ const w=workflow(kube);w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};w.wait=async(_label,_seconds,fn)=>{const result=await fn();assert.equal(result,true);};await w.syncNewServiceApplications();assert.deepEqual(requests,[]);assert(w.data.applicationsSyncedAt);
+});
 test('persist Secret before creating initial CI, and resume the same completed run',async()=>{
  const events=[];let run=null,secret=null;
  const kube={get:async p=>p.includes('/pipelineruns/')?run:p.includes('/secrets/')?secret:null,request:async(method,p,body)=>{
