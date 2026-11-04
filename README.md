@@ -84,5 +84,5 @@ the action inputs with the installed Hub schemas before rollout.
 
 Onboarding and image promotion target `box1-org/box1-workloads-dev`. Argo CD
 reads that public repository anonymously over HTTPS. Shared Tasks and
-Developer Hub configuration remain in `box1-gitops`. The service skeleton retains
-its `deploy/` manifests; generated services continue to include them.
+Developer Hub configuration remain in `box1-gitops`. Generated services keep
+deployment manifests in the GitOps workload repository.

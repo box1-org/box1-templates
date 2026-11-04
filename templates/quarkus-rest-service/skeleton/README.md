@@ -56,9 +56,8 @@ Jib creates JVM images from a digest-pinned UBI 9 / Java 21 runtime without a
 Docker daemon. Images use `registry.apps.ocp.box1.org/box1-ci/${{ values.name }}:<SHA>`;
 OpenShift pulls by digest through the internal registry service.
 
-`deploy/` is the generated onboarding snapshot for review and local rendering
-(`kubectl kustomize deploy`). After onboarding, the GitOps repository is the
-authoritative deployment source. Change the Route, probes, resources, or
+After onboarding, the GitOps repository is the authoritative deployment source.
+Change the Route, probes, resources, or
 `GREETING_PREFIX` there. The default smoke contract expects `Hello from box1`.
 The ConfigMap also sets JVM container memory limits; runtime has no API token.
 
