@@ -81,7 +81,7 @@ class Kube {
     const token = (await fs.readFile('/var/run/secrets/kubernetes.io/serviceaccount/token','utf8')).trim();
     const ca = await fs.readFile('/var/run/secrets/kubernetes.io/serviceaccount/ca.crt');
     return new Promise((resolve,reject) => {
-      const req = https.request('https://kubernetes.default.svc' + resource, { method, ca, headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' } }, res => {
+      const req = https.request('https://kubernetes.default.svc' + resource, { method, ca, headers:{ Authorization:'Bearer '+token, 'Content-Type':method==='PATCH'?'application/merge-patch+json':'application/json' } }, res => {
         let text=''; res.on('data', c => text+=c); res.on('end', () => {
           if (allowMissing && res.statusCode === 404) return resolve(null);
           let value; try { value=JSON.parse(text); } catch { return reject(new Error('Invalid Kubernetes response')); }
