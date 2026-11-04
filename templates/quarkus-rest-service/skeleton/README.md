@@ -7,8 +7,9 @@ Owner: `${{ values.owner }}`. Quarkus 3.40.1.1, Java 21, Maven 3.9.16.
 Optional integrations selected at creation: PostgreSQL = `${{ values.postgres }}`, Kafka = `${{ values.kafka }}`.
 The integrations add their Quarkus extensions and GitOps resources. PostgreSQL creates a
 service-owned Deployment, Service, PVC, and Secret placeholder; replace its password before
-syncing. Kafka creates a service-owned `KafkaTopic` on the shared `box1-kafka` Strimzi cluster.
-The broker address is `box1-kafka-kafka-bootstrap.box1-kafka.svc:9092`.
+syncing. Kafka uses the separately managed shared `box1-kafka` Strimzi cluster; service
+onboarding does not create a `KafkaTopic`. The broker address is
+`box1-kafka-kafka-bootstrap.box1-kafka.svc:9092`.
 
 ## Local development
 
