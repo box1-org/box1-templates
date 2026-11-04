@@ -194,9 +194,16 @@ class Workflow {
     await this.syncApplication(WORKLOADS_APP,revision,'box1-workloads-dev');
     await this.wait('new service Argo Application creation',300,async()=>{
       const app=await this.kube.get(APPS+'/'+this.name);
-      return app||this.name+' Application exists';
+      if(!app)return this.name+' Application exists';
+      this.log('platform','ready',{condition:'service_application_created',application:this.name,namespace:'openshift-gitops'});
+      return true;
     });
-    await this.syncApplication(this.name,revision,this.name);
+    const service=await this.kube.get(APPS+'/'+this.name);
+    const source=service?.spec?.source||(service?.spec?.sources||[]).find(s=>String(s.repoURL||'').replace(/\/$/,'').replace(/\.git$/,'')===WORKLOADS_REPO);
+    const observed=service?.status?.sync?.revision||service?.status?.sync?.revisions;
+    const alreadyHealthy=service?.status?.sync?.status==='Synced'&&service?.status?.health?.status==='Healthy'&&source&&((Array.isArray(observed)&&observed.includes(revision))||observed===revision);
+    this.log('platform',alreadyHealthy?'ready':'waiting',{condition:'service_application_sync',application:this.name,observedRevision:Array.isArray(observed)?observed.join(','):observed||'none'});
+    if(!alreadyHealthy)await this.syncApplication(this.name,revision,this.name);
     await this.save('PLATFORM_APPS_SYNCED',{applicationsSyncedAt:new Date().toISOString()});
   }
   async content(repo,file,ref='main') { const result=await this.github(`/repos/${ORG}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`,'GET',undefined,{missing:true});return result?Buffer.from(result.content,'base64').toString():null; }
