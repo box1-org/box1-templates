@@ -18,7 +18,21 @@ function action(id, operation, config, credentials) {
 exports.default=createBackendModule({pluginId:'scaffolder',moduleId:'box1-development-onboarding',register(reg){
   reg.registerInit({deps:{actions:scaffolderActionsExtensionPoint,config:coreServices.rootConfig,catalog:catalogServiceRef},async init({actions,config,catalog}){
     const credentials=DefaultGithubCredentialsProvider.fromIntegrations(ScmIntegrations.fromConfig(config));
-    actions.addActions(action('box1:repository:ensure','repository',config,credentials),action('box1:development:onboard','delivery',config,credentials),createTemplateAction({
+    actions.addActions(action('box1:repository:ensure','repository',config,credentials),
+      action('box1:development:provision','provision',config,credentials),
+      action('box1:development:platform','platform',config,credentials),
+      action('box1:development:build','buildPhase',config,credentials),
+      action('box1:development:promote','promote',config,credentials),
+      action('box1:development:verify','verify',config,credentials),
+      action('box1:development:onboard','delivery',config,credentials),createTemplateAction({
+      id:'box1:catalog:submit',description:'Submit or reuse the owned service catalog location without waiting for processing',
+      schema:{input:{type:'object',additionalProperties:false,required:['name'],properties:{name:shared.name}},output:{type:'object',properties:{entityRef:{type:'string'},catalogInfoUrl:{type:'string'}}}},
+      async handler(ctx){await new Workflow({ctx,config,credentials,catalog}).run('catalogSubmit');},
+    }),createTemplateAction({
+      id:'box1:catalog:verify',description:'Wait for the owned service catalog entity to finish processing',
+      schema:{input:{type:'object',additionalProperties:false,required:['name'],properties:{name:shared.name}},output:{type:'object',properties:{entityRef:{type:'string'},catalogInfoUrl:{type:'string'}}}},
+      async handler(ctx){await new Workflow({ctx,config,credentials,catalog}).run('catalogVerify');},
+    }),createTemplateAction({
       id:'box1:catalog:ensure',description:'Register or reuse the owned service catalog entry and observe processing',
       schema:{input:{type:'object',additionalProperties:false,required:['name'],properties:{name:shared.name}},output:{type:'object',properties:{entityRef:{type:'string'},catalogInfoUrl:{type:'string'}}}},
       async handler(ctx){await new Workflow({ctx,config,credentials,catalog}).run('registerCatalog');},

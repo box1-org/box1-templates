@@ -85,35 +85,64 @@ spec:
           sourceRevision: ${{ steps.publish.output.commitHash }}
           postgres: ${{ parameters.postgres }}
           kafka: ${{ parameters.kafka }}
-    - id: onboarding
-      name: Provision development, build and verify first deployment
-      action: box1:development:onboard
+    - id: catalogSubmit
+      name: Submit service to the catalog
+      action: box1:catalog:submit
+      input:
+        name: ${{ parameters.name }}
+    - id: provision
+      name: Provision and merge GitOps onboarding
+      action: box1:development:provision
       input:
         name: ${{ parameters.name }}
         sourceRevision: ${{ steps.publish.output.commitHash }}
-    - id: register
-      name: Register service in Developer Hub
-      action: box1:catalog:ensure
+    - id: platform
+      name: Synchronize and wait for platform readiness
+      action: box1:development:platform
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+    - id: build
+      name: Build the immutable first image
+      action: box1:development:build
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+    - id: promote
+      name: Promote the first image through GitOps
+      action: box1:development:promote
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+    - id: verify
+      name: Verify the deployed service
+      action: box1:development:verify
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+    - id: catalogVerify
+      name: Verify catalog processing
+      action: box1:catalog:verify
       input:
         name: ${{ parameters.name }}
   output:
     links:
       - title: Source repository
-        url: ${{ steps.onboarding.output.sourceUrl }}
+        url: ${{ steps.verify.output.sourceUrl }}
       - title: Service in catalog
         icon: catalog
         entityRef: component:default/${{ parameters.name }}
       - title: Initial CI build
-        url: ${{ steps.onboarding.output.pipelineUrl }}
+        url: ${{ steps.verify.output.pipelineUrl }}
       - title: Development deployment
-        url: ${{ steps.onboarding.output.deploymentUrl }}
+        url: ${{ steps.verify.output.deploymentUrl }}
       - title: Argo CD Application
-        url: ${{ steps.onboarding.output.argoUrl }}
+        url: ${{ steps.verify.output.argoUrl }}
       - title: Validated onboarding PR
-        url: ${{ steps.onboarding.output.onboardingUrl }}
+        url: ${{ steps.verify.output.onboardingUrl }}
     text:
       - title: Development service is ready
         content: |
           The first image is built and deployed. No additional source push is needed.
           Subsequent main merges use the normal CI and development promotion pipeline.
-          Onboarding status record: ${{ steps.onboarding.output.statusRecord }}.
+          Onboarding status record: ${{ steps.verify.output.statusRecord }}.

@@ -14,6 +14,19 @@ test('development-only merge policy rejects namespace, RBAC and baseline changes
  changed=copy();changed[`workloads/${name}/onboarding.yaml`].content+='\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: escalated\n';assert.throws(()=>validateBundle(changed,name));
  changed=copy();changed[`workloads/${name}/onboarding.yaml`].content=changed[`workloads/${name}/onboarding.yaml`].content.replace('- get','- create');assert.throws(()=>validateBundle(changed,name));
 });
+test('phase resume reuses completed provision, platform, build, and promotion work',async()=>{
+ const w=workflow();let calls=0;
+ w.gitopsFiles=async()=>({});w.pullRequest=async()=>{calls++;};
+ w.data.onboardingPR={merged:true};await w.provision();assert.equal(calls,0);
+ w.data={...w.data,applicationsSyncedAt:'now',history:[{phase:'PLATFORM_READY'}]};w.syncNewServiceApplications=async()=>{calls++;};w.platformReady=async()=>{calls++;};await w.platform();assert.equal(calls,0);
+ w.data.imageDigest=digest;w.build=async()=>{calls++;};await w.buildPhase();assert.equal(calls,0);
+ w.data.promotionPR={merged:true};await w.promote();assert.equal(calls,0);
+});
+test('restart after onboarding PR creation validates and resumes the existing PR',async()=>{
+ const w=workflow();let merged=0;const pr={number:7,head:{sha,ref:'onboard/'+name},merged_at:null};
+ w.data.onboardingPR={number:7,head:sha};w.github=async p=>p.endsWith('/pulls/7')?pr:{};w.verifyPR=async()=>{};w.wait=async(_l,_s,fn)=>{await fn();};w.merge=async()=>{merged++;};
+ await w.pullRequest('onboarding',{});assert.equal(merged,1);assert.equal(w.data.onboardingPR.number,7);
+});
 test('a concurrent task cannot acquire an unexpired service lease',async()=>{
  const w=workflow({get:async()=>({spec:{holderIdentity:'other',renewTime:new Date().toISOString(),leaseDurationSeconds:120}})});
  await assert.rejects(w.open(),/Another onboarding task/);
@@ -21,7 +34,23 @@ test('a concurrent task cannot acquire an unexpired service lease',async()=>{
 test('readiness gates do not advance while namespace or permissions are missing',async()=>{
  const w=workflow({get:async()=>null});let observed;
  w.wait=async(label,seconds,fn)=>{observed=await fn();throw new Error('pending readiness');};
- await assert.rejects(w.platformReady(),/pending readiness/);assert.match(observed,/Namespace Active/);assert.notEqual(w.data.phase,'PLATFORM_READY');
+ await assert.rejects(w.platformReady(),/pending readiness/);assert.match(observed,/condition=namespace state=.*Namespace Active/);assert.match(observed,/condition=serviceaccounts/);assert.notEqual(w.data.phase,'PLATFORM_READY');
+});
+test('readiness aggregation retains diagnostics when a condition fails',async()=>{
+ const w=workflow({get:async p=>{if(p.includes('/namespaces/orders-api-dev'))throw Error('api unavailable');return null;}});let diagnostic;
+ w.wait=async(_label,_seconds,fn)=>{diagnostic=await fn();throw Error('timed out');};
+ await assert.rejects(w.platformReady(),/timed out/);assert.match(diagnostic,/condition=namespace state=failed: api unavailable/);assert.match(diagnostic,/condition=registry_pull/);assert.equal(w.data.readiness.conditions.namespace,'failed: api unavailable');
+});
+test('readiness cancellation stops before another observation',async()=>{
+ const w=workflow({get:async()=>null});w.renew=async()=>{const e=new Error('cancelled');e.name='AbortError';throw e;};
+ await assert.rejects(w.platformReady(),/cancelled/);
+});
+test('build barrier ignores unrelated platform readiness conditions',async()=>{
+ const calls=[];const w=workflow({get:async p=>{calls.push(p);if(p.includes('/namespaces/orders-api-dev'))return {status:{phase:'Active'}};if(p.includes('/serviceaccounts/ci-build'))return {};if(p.includes('ci-build-image-builder'))return {roleRef:{name:'system:image-builder'},subjects:[{name:'ci-build',namespace:'box1-ci'}]};return null;}});
+ w.wait=async(_label,_seconds,fn)=>fn();await w.buildBarrier();assert.equal(calls.length,3);assert(calls.every(p=>!p.includes('pipelinesascode')&&!p.includes('argoproj')));
+});
+test('delivery starts readiness observation before the initial build completes',async()=>{
+ const w=workflow();const events=[];w.provision=async()=>events.push('provision');w.syncNewServiceApplications=async()=>events.push('sync');w.platformReady=async()=>{events.push('readiness-start');await new Promise(resolve=>setTimeout(resolve,1));events.push('readiness-done');};w.buildBarrier=async()=>events.push('barrier');w.buildPhase=async()=>{events.push('build-start');await new Promise(resolve=>setTimeout(resolve,3));events.push('build-done');};w.promote=async()=>events.push('promote');w.verify=async()=>events.push('verify');w.data={...w.data};await w.delivery();assert(events.indexOf('readiness-start')<events.indexOf('build-done'));assert(events.indexOf('build-start')<events.indexOf('readiness-done'));
 });
 test('new service explicitly syncs the workload index and service Application',async()=>{
  const mergeCommit='c'.repeat(40),requests=[];let service=null;
@@ -55,6 +84,10 @@ test('persist Secret before creating initial CI, and resume the same completed r
  const posts=events.filter(e=>e.startsWith('POST'));assert.match(posts[0],/secrets$/);assert.match(posts[1],/pipelineruns$/);
  await w.build();assert.equal(events.filter(e=>e.startsWith('POST')).length,2,'Resume must not duplicate a completed build or Secret');
  assert(events.some(e=>e.startsWith('DELETE')),'Short-lived build credential is removed');
+});
+test('failed initial build cleans its owned credential Secret',async()=>{
+ let secret,deleted=false;const kube={get:async p=>p.includes('/pipelineruns/')?null:p.includes('/secrets/')?secret:null,request:async(method,p,body)=>{if(p.endsWith('/secrets')&&method==='POST'){secret={...body,metadata:{...body.metadata,uid:'secret-uid'},data:{'git-provider-token':'redacted'}};return secret;}if(p.endsWith('/pipelineruns'))return {...body,metadata:{...body.metadata,uid:'run-uid'}};if(method==='PUT')return body;if(method==='DELETE'){deleted=true;secret=null;return {};}}};
+ const w=workflow(kube);w.github=async()=>({sha});w.buildToken=async()=>({token:'test-token',expires_at:new Date(Date.now()+3600000).toISOString()});w.wait=async()=>{throw Error('build failed');};await assert.rejects(w.build(),/build failed/);assert.equal(deleted,true);
 });
 test('failed required checks never produce a merge; retry uses an identical tree',async()=>{
  const w=workflow();const pr={number:1,head:{sha,ref:'onboard/'+name},state:'open'};w.data.onboardingPR={number:1,head:sha,validationRetries:2};w.verifyPR=async()=>{};
@@ -108,11 +141,17 @@ test('a pending duplicate catalog location is resolved without swallowing other 
 test('catalog registration refuses an entity from another repository',async()=>{
  await assert.rejects(ensureCatalog({getEntityByRef:async()=>({metadata:{annotations:{'github.com/project-slug':'other/repository'}}})},catalogContext()),/another source repository/);
 });
+test('catalog submit records the location without waiting for entity processing',async()=>{
+ const w=workflow();let reads=0,adds=0;w.ctx.getInitiatorCredentials=async()=>({principal:{type:'service'}});
+ w.save=async(phase,extra={})=>{w.data={...w.data,...extra,phase};};
+ w.catalogService={getEntityByRef:async()=>{reads++;return undefined;},addLocation:async({target})=>{adds++;assert.equal(target,'https://github.com/box1-org/orders-api/tree/main/catalog-info.yaml');}};
+ await w.catalogSubmit();assert.equal(adds,1);assert.equal(reads,1);assert.equal(w.data.catalog.status,'submitted');
+});
 test('catalog failures keep provisioning incomplete and produce durable failure state',async()=>{
  const w=workflow();w.data={...w.data,phase:'DEPLOYMENT_READY',deploymentImage:'registry@'+digest,onboardingPR:{merged:true},promotionPR:{merged:true}};
  w.ctx.getInitiatorCredentials=async()=>({principal:{type:'service'}});w.open=async()=>{};w.close=async()=>{};
  w.catalogService={getEntityByRef:async()=>undefined,addLocation:async()=>{throw Error('catalog unavailable');}};
- await assert.rejects(w.run('registerCatalog'),/catalog unavailable/);assert.equal(w.data.phase,'FAILED');assert.equal(w.data.failedDuring,'CATALOG_REGISTERING');
+ await assert.rejects(w.run('registerCatalog'),/catalog unavailable/);assert.equal(w.data.phase,'FAILED');assert.equal(w.data.failedDuring,'CATALOG_SUBMITTING');
  w.catalogService={getEntityByRef:async()=>ownedEntity};await w.run('registerCatalog');assert.equal(w.data.phase,'COMPLETE');assert.equal(w.data.catalogEntityRef,'component:default/'+name);
 });
 test('new onboarding writes only to development workload repository',async()=>{
