@@ -56,11 +56,11 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
       const postgres = resources.find(r => r.kind === 'Deployment' && r.metadata.name === `${name}-postgres`);
       const postgresSecret = resources.find(r => r.kind === 'Secret' && r.metadata.name === `${name}-postgres`);
       const postgresPvc = resources.find(r => r.kind === 'PersistentVolumeClaim' && r.metadata.name === `${name}-postgres-data`);
-      const kafkaTopic = resources.find(r => r.kind === 'KafkaTopic' && r.metadata.name === `${name}-events`);
+      const kafkaTopics = resources.filter(r => r.kind === 'KafkaTopic');
       assert.equal(Boolean(postgres), Boolean(parameters.postgres));
       assert.equal(Boolean(postgresSecret), Boolean(parameters.postgres));
       assert.equal(Boolean(postgresPvc), Boolean(parameters.postgres));
-      assert.equal(Boolean(kafkaTopic), Boolean(parameters.kafka));
+      assert.equal(kafkaTopics.length, 0, 'Kafka topics are managed outside the service onboarding bundle');
       if (parameters.postgres) {
         assert.equal(postgres.spec.template.spec.containers[0].envFrom[0].secretRef.name, `${name}-postgres`);
         assert.equal(postgresPvc.spec.resources.requests.storage, '5Gi');
