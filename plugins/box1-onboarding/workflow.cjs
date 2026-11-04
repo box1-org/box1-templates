@@ -96,7 +96,8 @@ class Kube {
   get(p) { return this.request('GET',p,undefined,true); }
 }
 class Workflow {
-  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); }
+  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); }
+  log(phase, state, extra={}) { const fields={onboardingId:this.data?.id||this.executionId,phase,state,...extra}; this.ctx.logger.info(Object.entries(fields).map(([k,v])=>`${k}=${String(v).replace(/\s+/g,'_')}`).join(' ')); }
   async github(p, method='GET', body, options={}) {
     const { token } = options.token ? {token:options.token} : await this.credentials.getCredentials({url:'https://github.com/'+ORG});
     const response=await fetch('https://api.github.com'+p, {method, headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:body===undefined?undefined:JSON.stringify(body), signal:AbortSignal.timeout(45000)});
@@ -120,20 +121,21 @@ class Workflow {
   async close() { if(this.lease) {const l=await this.kube.get(LEASES+'/'+this.key);if(l?.spec.holderIdentity===this.holder) await this.kube.request('PUT',LEASES+'/'+this.key,{...l,spec:{...l.spec,holderIdentity:'',leaseDurationSeconds:1}});} }
   async save(phase, extra={}) {
     const previous=this.data?.phase;
-    this.data={...this.data,...extra,phase,updatedAt:new Date().toISOString()};
+    const now=new Date().toISOString();
+    this.data={schemaVersion:2,...this.data,onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,serviceName:this.name,phase,phaseStatus:'succeeded',phaseStartedAt:previous===phase?(this.data?.phaseStartedAt||now):now,lastTransitionAt:previous===phase?(this.data?.lastTransitionAt||now):now,updatedAt:now,...extra};
     if(phase!=='FAILED') {this.data.lastSuccessfulState=phase;delete this.data.error;}
     this.data.history=[...(this.data.history||[]),...(previous===phase?[]:[{phase,at:this.data.updatedAt}])].slice(-40);
     const obj={apiVersion:'v1',kind:'ConfigMap',metadata:{name:this.key,namespace:'rhdh',labels:{'box1.org/onboarding':this.name},...(this.cm?{resourceVersion:this.cm.metadata.resourceVersion}:{})},data:{'status.json':JSON.stringify(this.data)}};
     this.cm=await this.kube.request(this.cm?'PUT':'POST',this.cm?ROOT+'/configmaps/'+this.key:ROOT+'/configmaps',obj);
-    if(previous!==phase) this.ctx.logger.info(`${this.name}: ${phase}`);
+    if(previous!==phase) this.log(phase,'succeeded',{elapsed: this.data.phaseStartedAt ? Math.round((Date.now()-Date.parse(this.data.phaseStartedAt))/1000)+'s' : '0s'});
   }
   async wait(label, seconds, observe) {
-    const deadline=Date.now()+seconds*1000;let last;
+    const deadline=Date.now()+seconds*1000;let last;const phase=this.data?.phase||'unknown';const started=Date.now();this.log(phase,'waiting',{condition:label,elapsed:'0s'});
     while(Date.now()<deadline) {
       await this.renew();
       const result=await observe(); if(result===true||result?.done) return result?.value;
       const reason=typeof result==='string'?result:label;
-      if(reason!==last){this.ctx.logger.info('Waiting: '+reason);last=reason;}
+      if(reason!==last){this.log(phase,'waiting',{condition:reason,elapsed:Math.round((Date.now()-started)/1000)+'s'});last=reason;}
       await pause(5000,undefined,{signal:this.ctx.signal});
     }
     throw new Error('Timed out waiting for '+label+'; retry the same service to resume. Status: rhdh/'+this.key);
@@ -303,28 +305,39 @@ class Workflow {
     await this.save(stage==='onboarding'?'ONBOARDING_MERGED':'PROMOTION_MERGED',{[field]:{...this.data[field],merged:true,mergeCommit:pr.merge_commit_sha}});
     return pr;
   }
-  async platformReady() {
-    await this.wait('development platform readiness',900,async()=>{
-      const namespace=await this.kube.get('/api/v1/namespaces/'+this.ns);if(namespace?.status?.phase!=='Active')return this.ns+' Namespace Active';
-      for(const [ns,name] of [[this.ns,this.name],['box1-ci','ci-build'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']]) if(!await this.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`))return ns+'/'+name+' ServiceAccount';
-      const pull=await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${this.name}-image-puller`);
-      if(pull?.roleRef?.name!=='system:image-puller'||!pull.subjects?.some(s=>s.name===this.name&&s.namespace===this.ns))return 'service registry pull permission';
-      const push=await this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder');
+  async buildBarrier() {
+    await this.wait('initial build prerequisites',300,async()=>{
+      const [namespace,serviceAccount,push]=await Promise.all([
+        this.kube.get('/api/v1/namespaces/'+this.ns),
+        this.kube.get('/api/v1/namespaces/box1-ci/serviceaccounts/ci-build'),
+        this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder'),
+      ]);
+      if(namespace?.status?.phase!=='Active')return this.ns+' Namespace Active';
+      if(!serviceAccount)return 'box1-ci/ci-build ServiceAccount';
       if(push?.roleRef?.name!=='system:image-builder'||!push.subjects?.some(s=>s.name==='ci-build'&&s.namespace==='box1-ci'))return 'CI registry push permission';
-      for(const ns of [this.ns,'openshift-gitops']) {
-        const role=await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/roles/${this.name}-release-observer`);
-        const binding=await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${this.name}-release-observer`);
-        if(!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'))return ns+' release observer permissions';
-      }
-      const repository=await this.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+this.name);
-      if(repository?.spec?.url!==`https://github.com/${ORG}/${this.name}`)return 'PAC Repository registration';
-      const app=await this.kube.get(APPS+'/'+this.name);
-      if(app?.spec?.destination?.namespace!==this.ns||app.status?.sync?.status!=='Synced')return 'Argo CD Application Synced in '+this.ns;
-      const dep=await this.kube.get(`/apis/apps/v1/namespaces/${this.ns}/deployments/${this.name}`);
-      if(!dep)return 'initial Deployment';
       return true;
     });
-    await this.save('PLATFORM_READY');
+  }
+  async platformReady({persist=true}={}) {
+    const checks={
+      namespace:async()=>{const v=await this.kube.get('/api/v1/namespaces/'+this.ns);return v?.status?.phase==='Active'||this.ns+' Namespace Active';},
+      serviceaccounts:async()=>{const values=await Promise.all([[this.ns,this.name],['box1-ci','ci-build'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']].map(async([ns,name])=>[ns,name,await this.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
+      registry_pull:async()=>{const v=await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${this.name}-image-puller`);return v?.roleRef?.name==='system:image-puller'&&v.subjects?.some(s=>s.name===this.name&&s.namespace===this.ns)||'service registry pull permission';},
+      registry_push:async()=>{const v=await this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder');return v?.roleRef?.name==='system:image-builder'&&v.subjects?.some(s=>s.name==='ci-build'&&s.namespace==='box1-ci')||'CI registry push permission';},
+      observer_rbac:async()=>{const values=await Promise.all([this.ns,'openshift-gitops'].map(async ns=>[ns,await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/roles/${this.name}-release-observer`),await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${this.name}-release-observer`)]));const missing=values.find(([ns,role,binding])=>!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'));return missing?missing[0]+' release observer permissions':true;},
+      pac_repository:async()=>{const v=await this.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+this.name);return v?.spec?.url===`https://github.com/${ORG}/${this.name}`||'PAC Repository registration';},
+      argo_application:async()=>{const v=await this.kube.get(APPS+'/'+this.name);return v?.spec?.destination?.namespace===this.ns&&v.status?.sync?.status==='Synced'||'Argo CD Application Synced in '+this.ns;},
+      deployment:async()=>await this.kube.get(`/apis/apps/v1/namespaces/${this.ns}/deployments/${this.name}`)?true:'initial Deployment',
+    };
+    const started=Date.now();
+    await this.wait('development platform readiness',900,async()=>{
+      const results=await Promise.all(Object.entries(checks).map(async([condition,fn])=>{try{const result=await fn();return [condition,result===true?'ready':result];}catch(error){return [condition,'failed: '+error.message];}}));
+      const pending=results.filter(([,state])=>state!=='ready');
+      this.data.readiness={conditions:Object.fromEntries(results),elapsedSeconds:Math.round((Date.now()-started)/1000)};
+      if(!pending.length)return true;
+      return pending.map(([condition,state])=>`condition=${condition} state=${state}`).join('; ');
+    });
+    if(persist) await this.save('PLATFORM_READY');
   }
   async buildToken() {
     const app=this.config.getConfigArray('integrations.github')[0].getConfigArray('apps')[0];
@@ -369,11 +382,17 @@ class Workflow {
       await this.kube.request('PUT',CI+'/secrets/'+secretName,{...secret,metadata:{...secret.metadata,ownerReferences:[{apiVersion:'tekton.dev/v1',kind:'PipelineRun',name:runName,uid:run.metadata.uid}]}});
     }
     if(!this.data.pipelineName)await this.save('BUILD_RUNNING',{pipelineName:runName,credentialSecret:runName+'-git'});
-    await this.wait('initial CI build '+runName,2800,async()=>{
-      run=await this.kube.get(runs+'/'+runName);const c=run?.status?.conditions?.find(c=>c.type==='Succeeded');
-      check(c?.status!=='False',`Initial build failed: ${c?.message}. Inspect PipelineRun box1-ci/${runName}; the repository and GitOps onboarding remain recorded for recovery.`);
-      return c?.status==='True';
-    });
+    try {
+      await this.wait('initial CI build '+runName,2800,async()=>{
+        run=await this.kube.get(runs+'/'+runName);const c=run?.status?.conditions?.find(c=>c.type==='Succeeded');
+        check(c?.status!=='False',`Initial build failed: ${c?.message}. Inspect PipelineRun box1-ci/${runName}; the repository and GitOps onboarding remain recorded for recovery.`);
+        return c?.status==='True';
+      });
+    } catch(error) {
+      const failedSecret=this.data.credentialSecret&&await this.kube.get(CI+'/secrets/'+this.data.credentialSecret);
+      if(failedSecret){check(failedSecret.metadata.labels?.['box1.org/onboarding-id']===this.data.id,'Refusing to delete an unrelated Secret');await this.kube.request('DELETE',CI+'/secrets/'+this.data.credentialSecret,{apiVersion:'v1',kind:'DeleteOptions',preconditions:{uid:failedSecret.metadata.uid}});}
+      throw error;
+    }
     const digest=(run.status.results||[]).find(r=>r.name==='image-digest')?.value;
     check(/^sha256:[a-f0-9]{64}$/.test(digest),'Initial CI did not return an immutable image digest');
     if(this.data.credentialSecret) {
@@ -383,13 +402,36 @@ class Workflow {
     await this.save('IMAGE_BUILT',{imageDigest:digest});
   }
   async delivery() {
+    await this.provision();
+    // Argo synchronization and the full readiness set can run while the build
+    // waits only for its own namespace, build ServiceAccount, and push binding.
+    const syncPromise=this.data.applicationsSyncedAt?Promise.resolve():this.syncNewServiceApplications();
+    const readinessPromise=this.platformReady({persist:false});
+    await this.buildBarrier();
+    await this.buildPhase();
+    await syncPromise;
+    await readinessPromise;
+    await this.save('PLATFORM_READY');
+    await this.promote();
+    await this.verify();
+  }
+  async gitopsFiles() {
     check(this.data?.sourceRevision===this.ctx.input.sourceRevision,'Missing or mismatched repository checkpoint');
-    const files=validateBundle(await filesAt(path.join(this.ctx.workspacePath,'gitops')),this.name);
-    // Existing checkpoints reconcile external state instead of blindly replaying mutations.
-    if(!this.data.onboardingPR?.merged)await this.pullRequest('onboarding',files);
-    if(!this.data.applicationsSyncedAt)await this.syncNewServiceApplications();
-    await this.platformReady();
-    if(!this.data.imageDigest)await this.build();
+    return validateBundle(await filesAt(path.join(this.ctx.workspacePath,'gitops')),this.name);
+  }
+  async provision() {
+    const files=await this.gitopsFiles();
+    if(!this.data.onboardingPR?.merged) await this.pullRequest('onboarding',files);
+  }
+  async platform() {
+    if(!this.data.applicationsSyncedAt) await this.syncNewServiceApplications();
+    if(!this.data.history?.some(item=>item.phase==='PLATFORM_READY')) await this.platformReady();
+  }
+  async buildPhase() {
+    if(!this.data.imageDigest) await this.build();
+  }
+  async promote() {
+    const files=await this.gitopsFiles();
     if(!this.data.promotionPR?.merged) {
       const paths=[`workloads/${this.name}/kustomization.yaml`,`workloads/${this.name}/deployment.yaml`];const updates={};
       for(const file of paths) updates[file]={...files[file]};
@@ -403,6 +445,9 @@ class Workflow {
       }
       await this.pullRequest('promotion',updates);
     }
+  }
+  async verify() {
+    check(this.data?.imageDigest,'Cannot verify deployment without an image digest');
     const image=`image-registry.openshift-image-registry.svc:5000/box1-ci/${this.name}@${this.data.imageDigest}`;
     await this.wait('first deployment and public endpoint',900,async()=>{
       const app=await this.kube.get(APPS+'/'+this.name);const dep=await this.kube.get(`/apis/apps/v1/namespaces/${this.ns}/deployments/${this.name}`);
@@ -423,13 +468,32 @@ class Workflow {
   }
   async registerCatalog() {
     check(this.data?.deploymentImage && this.data.onboardingPR?.merged && this.data.promotionPR?.merged,'Catalog completion requires a verified development deployment');
+    await this.catalogSubmit();
+    await this.catalogVerify();
+  }
+  async catalogSubmit() {
+    check(this.catalogService,'Catalog service is unavailable');
+    await this.save('CATALOG_SUBMITTING');
+    const options={credentials:await this.ctx.getInitiatorCredentials()};
+    const target='https://github.com/'+ORG+'/'+this.name+'/tree/main/catalog-info.yaml';
+    const ref='component:default/'+this.name;
+    const existing=await this.catalogService.getEntityByRef(ref,options);
+    if(!existing) {
+      try{await this.catalogService.addLocation({type:'url',target},options);}
+      catch(error){if(error.statusCode!==409&&error.status!==409)throw error;this.log('CATALOG_SUBMITTING','waiting',{condition:'catalog_location_exists'});}
+    } else check(existing.metadata.annotations?.['github.com/project-slug']===ORG+'/'+this.name,'Existing catalog entity belongs to another source repository');
+    this.ctx.output('entityRef',ref);this.ctx.output('catalogInfoUrl',target);
+    await this.save('CATALOG_SUBMITTED',{catalog:{entityRef:ref,status:'submitted'}});
+  }
+  async catalogVerify() {
+    const ref=this.data?.catalog?.entityRef||'component:default/'+this.name;
     await this.save('CATALOG_REGISTERING');
     await ensureCatalog(this.catalogService,this.ctx);
-    await this.save('COMPLETE',{completedAt:new Date().toISOString(),catalogEntityRef:'component:default/'+this.name});
+    await this.save('COMPLETE',{completedAt:new Date().toISOString(),catalogEntityRef:ref,catalog:{entityRef:ref,status:'ready'}});
   }
   async run(operation) {
-    try{await this.open();await this[operation]();}
-    catch(error){if(this.data)try{await this.save('FAILED',{error:error.message,failedDuring:this.data.phase,failedAt:new Date().toISOString()});}catch{}throw error;}
+    try{await this.open();this.log(operation,'running');await this[operation]();}
+    catch(error){if(this.data)try{await this.save('FAILED',{phaseStatus:'failed',error:error.message,lastErrorCode:error.code||'ONBOARDING_FAILED',lastErrorMessage:error.message,failedDuring:this.data.phase,failedAt:new Date().toISOString()});}catch{}throw error;}
     finally{await this.close();}
   }
 }
