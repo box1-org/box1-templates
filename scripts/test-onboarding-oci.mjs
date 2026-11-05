@@ -140,25 +140,26 @@ test('the pinned CLI matches the deployed RHDH compatibility target', () => {
 const digestA = `sha256:${'a'.repeat(64)}`;
 const digestB = `sha256:${'b'.repeat(64)}`;
 const repository = `${oci.registry}/${oci.repository}`;
-const runtimeFiles = (reference = `oci://${repository}@${digestA}!${oci.pluginPath}`, annotationDigest = digestA) => ({
+const runtimeFiles = (reference = `oci://${repository}@${digestA}!${oci.pluginPath}`, annotationDigest = digestA, revisionValue = 'c'.repeat(40)) => ({
   dynamicPlugins: `plugins:\n      - package: ${reference}\n        disabled: false\n      - package: ./other\n`,
-  backstage: `annotations:\n              box1.org/onboarding-plugin-digest: ${annotationDigest}\n`,
+  backstage: `annotations:\n              box1.org/onboarding-plugin-digest: ${annotationDigest}\n              box1.org/onboarding-plugin-revision: ${revisionValue}\n`,
 });
 
 test('a release updates only the digest reference and rollout annotation', () => {
-  const plan = planRuntimeUpdate(oci, runtimeFiles(), digestB);
+  const plan = planRuntimeUpdate(oci, runtimeFiles(), digestB, revision);
   assert.equal(plan.rollbackDigest, digestA);
   assert.equal(plan.unchanged, false);
   assert.equal(plan.dynamicPlugins, runtimeFiles(`oci://${repository}@${digestB}!${oci.pluginPath}`).dynamicPlugins);
-  assert.equal(plan.backstage, runtimeFiles(undefined, digestB).backstage);
-  assert.equal(planRuntimeUpdate(oci, runtimeFiles(), digestA).unchanged, true);
+  assert.equal(plan.backstage, runtimeFiles(undefined, digestB, revision).backstage);
+  assert.equal(planRuntimeUpdate(oci, runtimeFiles(), digestA, revision).unchanged, true);
 });
 
 test('a release before the cutover opens no PR', () => {
-  assert.equal(planRuntimeUpdate(oci, { dynamicPlugins: '- package: ./box1-scaffolder-onboarding-dynamic\n', backstage: '' }, digestB), null);
+  assert.equal(planRuntimeUpdate(oci, { dynamicPlugins: '- package: ./box1-scaffolder-onboarding-dynamic\n', backstage: '' }, digestB, revision), null);
 });
 
 for (const [name, files, digest, expected] of [
+  ['a missing source revision annotation', { ...runtimeFiles(), backstage: runtimeFiles().backstage.replace(/.*revision.*\n/, '') }, digestB, /source revision annotation/],
   ['a malformed release digest', runtimeFiles(), 'sha256:abc', /Malformed digest/],
   ['a mutable tag in the current configuration', runtimeFiles(`oci://${repository}:1.1.0!${oci.pluginPath}`), digestB, /not digest-pinned/],
   ['a wrong plugin path', runtimeFiles(`oci://${repository}@${digestA}!elsewhere`), digestB, /plugin path/],
@@ -170,7 +171,7 @@ for (const [name, files, digest, expected] of [
   ['a stale rollout annotation', runtimeFiles(undefined, digestB), digestB, /disagree/],
   ['a missing rollout annotation', { ...runtimeFiles(), backstage: '' }, digestB, /one rollout digest annotation/],
 ]) {
-  test(`a release rejects ${name}`, () => assert.throws(() => planRuntimeUpdate(oci, files, digest), expected));
+  test(`a release rejects ${name}`, () => assert.throws(() => planRuntimeUpdate(oci, files, digest, revision), expected));
 }
 
 test('the GitOps PR records everything needed to review and roll back', () => {

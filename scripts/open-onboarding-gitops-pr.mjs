@@ -18,7 +18,8 @@ export function runtimeReference(oci, digest) {
 }
 
 // Returns null when the runtime has not been cut over to an OCI reference yet.
-export function planRuntimeUpdate(oci, files, digest) {
+export function planRuntimeUpdate(oci, files, digest, revision) {
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error(`Malformed revision: ${revision}`);
   const target = runtimeReference(oci, digest);
   const entry = new RegExp(`^(\\s*- package: )oci://${escapeRegExp(`${oci.registry}/${oci.repository}`)}([@:][^!\\s]+)!(\\S+)[ \\t]*$`, 'gm');
   const matches = [...files.dynamicPlugins.matchAll(entry)];
@@ -34,11 +35,14 @@ export function planRuntimeUpdate(oci, files, digest) {
   if (annotations.length !== 1) throw new Error(`Expected one rollout digest annotation, found ${annotations.length}`);
   if (annotations[0][2] !== rollbackDigest) throw new Error('The rollout annotation and the configured digest disagree');
 
+  const sourceRevision = /^(\s*box1\.org\/onboarding-plugin-revision: )\S+[ \t]*$/gm;
+  if ([...files.backstage.matchAll(sourceRevision)].length !== 1) throw new Error('Expected one source revision annotation');
+
   return {
     rollbackDigest,
     unchanged: rollbackDigest === digest,
     dynamicPlugins: files.dynamicPlugins.replace(entry, `$1${target}`),
-    backstage: files.backstage.replace(annotation, `$1${digest}`),
+    backstage: files.backstage.replace(annotation, `$1${digest}`).replace(sourceRevision, `$1${revision}`),
   };
 }
 
@@ -85,7 +89,7 @@ export async function publish(oci, artifact, token) {
     return Buffer.from(content.content, 'base64').toString();
   };
   const files = { dynamicPlugins: await read(DYNAMIC_PLUGINS), backstage: await read(BACKSTAGE) };
-  const plan = planRuntimeUpdate(oci, files, artifact.digest);
+  const plan = planRuntimeUpdate(oci, files, artifact.digest, artifact.revision);
   if (!plan) {
     console.log('box1-gitops has no OCI onboarding plugin reference yet; no PR opened.');
     return null;
