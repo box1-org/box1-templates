@@ -5,8 +5,10 @@ import { execFileSync } from 'node:child_process';
 import nunjucks from 'nunjucks';
 import YAML from 'yaml';
 import Ajv from 'ajv';
+import { resolveKubectl } from './kubectl-tool.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
+const kubectl = await resolveKubectl();
 const source = path.join(root, 'templates/quarkus-rest-service');
 const env = new nunjucks.Environment(null, {
   autoescape: false, throwOnUndefined: true,
@@ -45,7 +47,7 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
   assert.equal(pom.includes('quarkus-jdbc-postgresql'), Boolean(parameters.postgres));
   assert.equal(pom.includes('quarkus-messaging-kafka'), Boolean(parameters.kafka));
   for (const folder of [path.join(target, `gitops/workloads/${name}`)]) {
-    const resources = YAML.parseAllDocuments(execFileSync('kubectl', ['kustomize', folder], { encoding: 'utf8' })).map(d => d.toJSON());
+    const resources = YAML.parseAllDocuments(execFileSync(kubectl, ['kustomize', folder], { encoding: 'utf8' })).map(d => d.toJSON());
     const deployment = resources.find(r => r.kind === 'Deployment');
     assert.equal(deployment.metadata.namespace, name + '-dev');
     assert.equal(deployment.metadata.labels['backstage.io/kubernetes-id'], name);
