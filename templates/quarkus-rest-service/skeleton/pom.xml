@@ -69,7 +69,7 @@
         {% if values.kafka %}
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-smallrye-reactive-messaging-kafka</artifactId>
+            <artifactId>quarkus-messaging-kafka</artifactId>
         </dependency>
         {% endif %}
         <dependency>
