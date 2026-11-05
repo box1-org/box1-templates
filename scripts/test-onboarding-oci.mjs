@@ -154,10 +154,6 @@ test('a release updates only the digest reference and rollout annotation', () =>
   assert.equal(planRuntimeUpdate(oci, runtimeFiles(), digestA, revision).unchanged, true);
 });
 
-test('a release before the cutover opens no PR', () => {
-  assert.equal(planRuntimeUpdate(oci, { dynamicPlugins: '- package: ./box1-scaffolder-onboarding-dynamic\n', backstage: '' }, digestB, revision), null);
-});
-
 for (const [name, files, digest, expected] of [
   ['a missing source revision annotation', { ...runtimeFiles(), backstage: runtimeFiles().backstage.replace(/.*revision.*\n/, '') }, digestB, /source revision annotation/],
   ['a malformed release digest', runtimeFiles(), 'sha256:abc', /Malformed digest/],
@@ -167,7 +163,8 @@ for (const [name, files, digest, expected] of [
     const files = runtimeFiles();
     files.dynamicPlugins += `      - package: oci://${repository}@${digestB}!${oci.pluginPath}\n`;
     return files;
-  })(), digestB, /More than one/],
+  })(), digestB, /found 2/],
+  ['no plugin definition', { dynamicPlugins: '- package: ./box1-scaffolder-onboarding-dynamic\n', backstage: '' }, digestB, /found 0/],
   ['a stale rollout annotation', runtimeFiles(undefined, digestB), digestB, /disagree/],
   ['a missing rollout annotation', { ...runtimeFiles(), backstage: '' }, digestB, /one rollout digest annotation/],
 ]) {
