@@ -128,11 +128,6 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
   }
   console.log(`PASS ${name}: render, ownership, pipeline contract, namespaces, Kustomize${actionsFile ? ', installed actions' : ''}`);
 }
-for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quarkus-reference', 'orders-service', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(36)]) {
-  assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
-}
-console.log('PASS rejected unsafe/reserved names');
-
 const repositorySource = path.join(root, 'templates/github-repository');
 const repositoryTemplate = YAML.parse(fs.readFileSync(path.join(repositorySource, 'template.yaml'), 'utf8'));
 const checkRepositoryForm = ajv.compile(repositoryTemplate.spec.parameters[0]);
@@ -166,3 +161,7 @@ for (const name of ['../escape', 'Uppercase', 'ab', 'a--b', 'a-', 'a'.repeat(64)
   assert(!checkRepositoryForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'public' }), `Accepted unsafe repository name: ${name}`);
 }
 console.log('PASS github-repository rejected unsafe names');
+for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quarkus-reference', 'orders-service', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(36)]) {
+  assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
+}
+console.log('PASS rejected unsafe/reserved names');
