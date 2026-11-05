@@ -78,6 +78,10 @@ test('existing healthy service Application skips a duplicate sync request',async
  const kube={get:async p=>p.endsWith('/box1-workloads-dev')?app('box1-workloads-dev'):app(name),request:async()=>{requests.push('PATCH');return {};}};
  const w=workflow(kube);w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};w.wait=async(_label,_seconds,fn)=>{const result=await fn();assert.equal(result,true);};await w.syncNewServiceApplications();assert.deepEqual(requests,[]);assert(w.data.applicationsSyncedAt);
 });
+test('healthy expected Argo revision wins over a concurrent active operation',async()=>{
+ const app={spec:{source:{repoURL:'https://github.com/box1-org/box1-workloads-dev.git'}},status:{sync:{status:'Synced',revision:sha},health:{status:'Healthy'},operationState:{phase:'Running'}}};let patches=0;
+ const w=workflow({get:async()=>app,request:async()=>{patches++;}});w.wait=async(_label,_seconds,fn)=>{assert.equal(await fn(),true);};w.github=async()=>{throw Error('GitHub should not be called');};await w.syncApplication('orders-api',sha,'orders-api');assert.equal(patches,0);
+});
 test('persist Secret before creating initial CI, and resume the same completed run',async()=>{
  const events=[];let run=null,secret=null;
  const kube={get:async p=>p.includes('/pipelineruns/')?run:p.includes('/secrets/')?secret:null,request:async(method,p,body)=>{

@@ -158,9 +158,9 @@ class Workflow {
       const app=await this.kube.get(path);if(!app)return `${applicationName} Application exists`;
       const source=app.spec?.source||(app.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
       const operation=app.status?.operationState||{};const active=['Running','Terminating'].includes(operation.phase);
+      if(source&&app.status?.sync?.status==='Synced'&&app.status?.health?.status==='Healthy'&&revisionMatches(app.status,source))return true;
       if(active)return `${applicationName} has an active Argo operation`;
       if(['Error','Failed'].includes(operation.phase))throw new Error(details(app));
-      if(source&&app.status?.sync?.status==='Synced'&&app.status?.health?.status==='Healthy'&&revisionMatches(app.status,source))return true;
       return `${applicationName} is ${app.status?.sync?.status||'not synced'}/${app.status?.health?.status||'not healthy'} at ${app.status?.sync?.revision||'no revision'}`;
     };
     await this.wait(label+' before sync',300,observe);
