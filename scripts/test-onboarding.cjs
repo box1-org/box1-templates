@@ -1,8 +1,8 @@
 // Retired historical fixture: these names validate rejection of previously used demo identifiers.
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const YAML=require('yaml');
-const {Workflow,validateName,validateBundle,filesAt}=require('../plugins/box1-onboarding/workflow.cjs');
+const {DELIVERY_PHASES,Workflow,validateName,validateBundle,filesAt}=require('../plugins/box1-onboarding/workflow.cjs');
 const name='orders-api',id='9ae74f64-b93b-4d70-a6fe-4a223436b6f0',sha='a'.repeat(40),digest='sha256:'+'b'.repeat(64);
-function workflow(kube={}){const outputs={};const w=new Workflow({ctx:{input:{name,sourceRevision:sha},workspacePath:'unused',logger:{info(){}},output:(k,v)=>outputs[k]=v},config:{},credentials:{},kube});w.data={id,name,namespace:name+'-dev',sourceRevision:sha};w.renew=async()=>{};w.save=async(phase,extra={})=>{w.data={...w.data,...extra,phase};};return w;}
+function workflow(kube={}){const outputs={};const w=new Workflow({ctx:{input:{name,sourceRevision:sha},workspacePath:'unused',logger:{info(){}},output:(k,v)=>outputs[k]=v},config:{},credentials:{},kube});w.data={id,name,namespace:name+'-dev',sourceRevision:sha};w.renew=async()=>{};w.save=async(phase,extra={})=>{w.data={...w.data,...extra,phase:phase??w.data.phase};};return w;}
 test('development-only merge policy rejects namespace, RBAC and baseline changes',async()=>{
  const files=await filesAt(path.resolve(__dirname,'../.validation/orders-api/gitops'));validateBundle(files,name);
  for(const invalid of ['orders-service','quarkus-reference','default','prod/escape','box1-other','Uppercase'])assert.throws(()=>validateName(invalid));
@@ -18,8 +18,8 @@ test('phase resume reuses completed provision, platform, build, and promotion wo
  const w=workflow();let calls=0;
  w.gitopsFiles=async()=>({});w.pullRequest=async()=>{calls++;};
  w.data.onboardingPR={merged:true};await w.provision();assert.equal(calls,0);
- w.data={...w.data,applicationsSyncedAt:'now',history:[{phase:'PLATFORM_READY'}]};w.syncNewServiceApplications=async()=>{calls++;};w.platformReady=async()=>{calls++;};await w.platform();assert.equal(calls,0);
- w.data.imageDigest=digest;w.build=async()=>{calls++;};await w.buildPhase();assert.equal(calls,0);
+ w.data={...w.data,applicationsSyncedAt:'now',history:[{phase:'PLATFORM_READY'}],imageDigest:digest};w.requestServiceSync=async()=>{calls++;};w.buildBarrier=async()=>{calls++;};await w.platform();assert.equal(calls,0);
+ w.completePlatform=async()=>{calls++;};w.build=async()=>{calls++;};await w.buildPhase();assert.equal(calls,0);
  w.data.promotionPR={merged:true};await w.promote();assert.equal(calls,0);
 });
 test('restart after onboarding PR creation validates and resumes the existing PR',async()=>{
@@ -52,9 +52,6 @@ test('build barrier ignores unrelated platform readiness conditions',async()=>{
 test('Argo sync PATCH uses Kubernetes merge-patch content type',async()=>{
  const source=await fs.readFile(path.resolve(__dirname,'../plugins/box1-onboarding/workflow.cjs'),'utf8');assert.match(source,/method==='PATCH'\?'application\/merge-patch\+json':'application\/json'/);
 });
-test('delivery starts readiness observation before the initial build completes',async()=>{
- const w=workflow();const events=[];w.provision=async()=>events.push('provision');w.syncNewServiceApplications=async()=>events.push('sync');w.platformReady=async()=>{events.push('readiness-start');await new Promise(resolve=>setTimeout(resolve,1));events.push('readiness-done');};w.buildBarrier=async()=>events.push('barrier');w.buildPhase=async()=>{events.push('build-start');await new Promise(resolve=>setTimeout(resolve,3));events.push('build-done');};w.promote=async()=>events.push('promote');w.verify=async()=>events.push('verify');w.data={...w.data};await w.delivery();assert(events.indexOf('readiness-start')<events.indexOf('build-done'));assert(events.indexOf('build-start')<events.indexOf('readiness-done'));
-});
 test('new service explicitly syncs the workload index and service Application',async()=>{
  const mergeCommit='c'.repeat(40),requests=[];let service=null;
  const source={repoURL:'https://github.com/box1-org/box1-workloads-dev.git',path:'applications',targetRevision:'main'};
@@ -68,7 +65,7 @@ test('new service explicitly syncs the workload index and service Application',a
  }};
  const w=workflow(kube);w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};
  w.wait=async(label,_seconds,fn)=>{if(label.includes('before sync'))return;const result=await fn();if(label.includes('creation'))assert(result);else assert.equal(result,true);};
- await w.syncNewServiceApplications();
+ await w.requestServiceSync();await w.awaitServiceSync();
  assert.deepEqual(requests.map(r=>r.p),['/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/box1-workloads-dev','/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/orders-api']);
  assert(requests.every(r=>r.body.operation.initiatedBy.username==='box1-rhdh'));
  assert(requests.every(r=>r.body.operation.sync.revision===mergeCommit));
@@ -76,7 +73,7 @@ test('new service explicitly syncs the workload index and service Application',a
 test('existing healthy service Application skips a duplicate sync request',async()=>{
  const mergeCommit='c'.repeat(40),requests=[];const app=(name)=>({spec:{source:{repoURL:'https://github.com/box1-org/box1-workloads-dev.git',path:'workloads/'+name}},status:{sync:{status:'Synced',revision:mergeCommit},health:{status:'Healthy'},operationState:{phase:'Succeeded'}}});
  const kube={get:async p=>p.endsWith('/box1-workloads-dev')?app('box1-workloads-dev'):app(name),request:async()=>{requests.push('PATCH');return {};}};
- const w=workflow(kube);w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};w.wait=async(_label,_seconds,fn)=>{const result=await fn();assert.equal(result,true);};await w.syncNewServiceApplications();assert.deepEqual(requests,[]);assert(w.data.applicationsSyncedAt);
+ const w=workflow(kube);w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};w.wait=async(_label,_seconds,fn)=>{const result=await fn();assert.equal(result,true);};await w.requestServiceSync();assert.deepEqual(requests,[]);assert(w.data.applicationsSyncedAt);
 });
 test('persist Secret before creating initial CI, and resume the same completed run',async()=>{
  const events=[];let run=null,secret=null;
@@ -178,4 +175,138 @@ test('new onboarding writes only to development workload repository',async()=>{
   throw Error('Unexpected '+p);
  };
  await w.pullRequest('onboarding',files);assert(calls.length>=4);assert.match(w.data.onboardingPR.url,/box1-workloads-dev/);
+});
+test('ConfigMap state conflicts are surfaced without overwriting newer state',async()=>{
+ const latest={metadata:{resourceVersion:'9'},data:{'status.json':JSON.stringify({id,onboardingId:id,phase:'BUILD_RUNNING',phaseStatus:'running'})}};
+ const kube={get:async()=>latest,request:async()=>{const e=new Error('conflict');e.status=409;throw e;}};
+ const w=workflow(kube);w.save=Workflow.prototype.save.bind(w);w.cm={metadata:{resourceVersion:'8'}};await assert.rejects(w.save('PLATFORM_READY'),error=>error.code==='ONBOARDING_STATE_CONFLICT');assert.equal(w.data.phase,'BUILD_RUNNING');assert.equal(w.cm.metadata.resourceVersion,'9');
+});
+test('wait persists an explicit waiting phase status',async()=>{
+ const w=workflow();const saves=[];w.save=async(phase,extra)=>saves.push({phase,...extra});w.renew=async()=>{};await assert.rejects(w.wait('registry_permission',0,async()=>false),/Timed out waiting/);assert.equal(saves[0].phaseStatus,'waiting');assert.equal(saves[0].waitCondition,'registry_permission');
+});
+
+// A fake API server that rejects stale resourceVersions, as Kubernetes does.
+function versionedKube(objects={}){
+ const store=new Map(Object.entries(objects)),writes=[];
+ const key=p=>p.replace(/\/configmaps$/,'/configmaps/box1-onboard-'+name);
+ return {store,writes,get:async p=>store.get(key(p))??null,request:async(method,p,body)=>{
+  await new Promise(resolve=>setTimeout(resolve,2));
+  if(method==='PATCH'){writes.push({method,p,status:200});return store.get(p);}
+  const current=store.get(key(p)),sent=body.metadata?.resourceVersion;
+  if(current&&sent!==current.metadata.resourceVersion){writes.push({method,p,status:409});const e=new Error('conflict');e.status=409;throw e;}
+  const saved={...body,metadata:{...body.metadata,resourceVersion:String(Number(current?.metadata.resourceVersion||0)+1)}};
+  store.set(key(p),saved);writes.push({method,p,status:200});return saved;
+ }};
+}
+function realState(w,kube){w.save=Workflow.prototype.save.bind(w);w.wait=Workflow.prototype.wait.bind(w);w.cm=kube.store.get('/api/v1/namespaces/rhdh/configmaps/box1-onboard-'+name);return w;}
+const stateRecord=()=>({'/api/v1/namespaces/rhdh/configmaps/box1-onboard-orders-api':{metadata:{resourceVersion:'1'},data:{'status.json':'{}'}}});
+test('parallel waits serialize state writes against a resourceVersion-enforcing API',async()=>{
+ const kube=versionedKube(stateRecord());const w=realState(workflow(kube),kube);w.data.phase='ONBOARDING_MERGED';
+ await Promise.all([w.wait('platform readiness',1,async()=>true),w.wait('build prerequisites',1,async()=>true)]);
+ assert.deepEqual(kube.writes.map(item=>item.status),[200,200]);assert.equal(w.cm.metadata.resourceVersion,'3');assert.equal(w.data.phase,'ONBOARDING_MERGED');
+ assert.deepEqual(w.data.activeWaits,['platform readiness','build prerequisites']);
+});
+test('a waiting save during a build does not move the phase back',async()=>{
+ const kube=versionedKube(stateRecord());const w=realState(workflow(kube),kube);w.data.phase='ONBOARDING_MERGED';
+ await Promise.all([w.save('BUILD_RUNNING',{pipelineName:'run'}),w.wait('platform readiness',1,async()=>true)]);
+ assert.equal(w.data.phase,'BUILD_RUNNING');assert.equal(w.data.phaseStatus,'waiting');
+});
+test('a real state conflict from another process still surfaces after serialization',async()=>{
+ const kube=versionedKube(stateRecord());const w=realState(workflow(kube),kube);w.cm={metadata:{resourceVersion:'0'}};
+ await assert.rejects(w.save('PLATFORM_READY'),error=>error.code==='ONBOARDING_STATE_CONFLICT');
+});
+test('concurrent waits share one Lease renewal',async()=>{
+ const leasePath='/apis/coordination.k8s.io/v1/namespaces/rhdh/leases/box1-onboard-orders-api';
+ const w0=workflow();const kube=versionedKube({[leasePath]:{metadata:{resourceVersion:'1'},spec:{holderIdentity:w0.holder}}});w0.kube=kube;
+ const w=w0;w.renew=Workflow.prototype.renew.bind(w);
+ await Promise.all([w.renew(),w.renew(),w.renew()]);assert.deepEqual(kube.writes.map(item=>item.status),[200]);
+ await w.renew();assert.deepEqual(kube.writes.map(item=>item.status),[200,200]);
+});
+const mergeCommit='c'.repeat(40);
+const argoApp=(sync,revision=mergeCommit,operation={phase:'Succeeded',startedAt:new Date(Date.now()-600000).toISOString()})=>({metadata:{},spec:{source:{repoURL:'https://github.com/box1-org/box1-workloads-dev.git'}},status:{sync:{status:sync,revision},health:{status:'Healthy'},operationState:operation}});
+test('an out-of-sync Application with no active operation gets an explicit sync request',async()=>{
+ const patches=[];const w=workflow({get:async()=>argoApp('OutOfSync','d'.repeat(40)),request:async(method,p,body)=>{patches.push({method,p,body});return {};}});
+ w.wait=async(label,_seconds,fn)=>{assert.equal(await fn(),true,label);};
+ assert.equal(typeof await w.requestApplicationSync(name,mergeCommit,name),'number');
+ assert.equal(patches.length,1);assert.equal(patches[0].method,'PATCH');assert.equal(patches[0].body.operation.sync.revision,mergeCommit);
+});
+test('a sync request waits for an active Argo operation and refuses a failed one',async()=>{
+ const results=[];const running=workflow({get:async()=>argoApp('OutOfSync','d'.repeat(40),{phase:'Running'})});
+ running.wait=async(_label,_seconds,fn)=>{results.push(await fn());throw new Error('stop');};
+ await assert.rejects(running.requestApplicationSync(name,mergeCommit,name),/stop/);assert.match(results[0],/active Argo operation/);
+ const failed=workflow({get:async()=>argoApp('OutOfSync','d'.repeat(40),{phase:'Failed',message:'hook failed'})});
+ failed.wait=async(_label,_seconds,fn)=>fn();await assert.rejects(failed.requestApplicationSync(name,mergeCommit,name),/hook failed/);
+});
+test('platform stops at the build boundary and a restart does not repeat the sync request',async()=>{
+ let patches=0;const kube={get:async p=>p.endsWith('/box1-workloads-dev')?argoApp('Synced'):argoApp('OutOfSync','d'.repeat(40)),request:async method=>{assert.equal(method,'PATCH');patches++;return {};}};
+ const w=workflow(kube);const labels=[];w.data={...w.data,onboardingPR:{merged:true,mergeCommit}};w.wait=async(label,_seconds,fn)=>{labels.push(label);await fn();};w.buildBarrier=async()=>labels.push('barrier');
+ await w.platform();
+ assert.equal(patches,1);assert(w.data.serviceSyncRequestedAt);assert.equal(w.data.applicationsSyncedAt,undefined);assert.equal(labels.at(-1),'barrier');
+ assert(!labels.some(label=>label.includes('readiness')||label.includes('requested Argo sync')));
+ await w.platform();assert.equal(patches,1);
+});
+test('awaitServiceSync honours the persisted request time after a restart',async()=>{
+ const requested=Date.now()-60000;const w=workflow({get:async()=>argoApp('Synced',mergeCommit,{phase:'Succeeded',startedAt:new Date(requested+1000).toISOString()})});
+ w.data={...w.data,onboardingPR:{merged:true,mergeCommit},serviceSyncRequestedAt:new Date(requested).toISOString()};w.wait=async(_label,_seconds,fn)=>{assert.equal(await fn(),true);};
+ await w.awaitServiceSync();assert(w.data.applicationsSyncedAt);
+ const stale=workflow({get:async()=>argoApp('Synced',mergeCommit)});stale.data={...w.data,applicationsSyncedAt:undefined};let result;stale.wait=async(_label,_seconds,fn)=>{result=await fn();};
+ await stale.awaitServiceSync();assert.notEqual(result,true);
+});
+test('the build overlaps platform readiness, which is recorded once both finish',async()=>{
+ const w=workflow();const events=[];w.data.history=[];
+ w.build=async()=>{events.push('build-start');await new Promise(resolve=>setTimeout(resolve,5));events.push('build-done');await w.save('IMAGE_BUILT',{imageDigest:digest});};
+ w.completePlatform=async()=>{events.push('platform-start');await new Promise(resolve=>setTimeout(resolve,1));events.push('platform-done');};
+ const saved=[];const save=w.save;w.save=async(phase,extra)=>{saved.push(phase);await save(phase,extra);};
+ await w.buildPhase();
+ assert(events.indexOf('build-start')<events.indexOf('platform-done'));assert(events.indexOf('platform-start')<events.indexOf('build-done'));assert.deepEqual(saved,['IMAGE_BUILT','PLATFORM_READY']);
+});
+test('a build failure stops platform observers and reports the build error',async()=>{
+ const w=workflow({get:async()=>null});w.data.applicationsSyncedAt='now';w.build=async()=>{await new Promise(resolve=>setTimeout(resolve,5));throw new Error('Initial build failed');};w.wait=Workflow.prototype.wait.bind(w);
+ const started=Date.now();await assert.rejects(w.buildPhase(),/Initial build failed/);assert(Date.now()-started<1000,'observers should not keep polling');assert.equal(w.activeWaits.size,0);assert.equal(w.data.phase,undefined);
+});
+test('a platform failure lets the build finish, keeps its digest, and a retry does not rebuild',async()=>{
+ const w=workflow();let builds=0,finished=false;w.data.history=[];
+ w.build=async()=>{builds++;await new Promise(resolve=>setTimeout(resolve,5));finished=true;await w.save('IMAGE_BUILT',{imageDigest:digest});};
+ w.completePlatform=async()=>{throw new Error('Argo sync failed');};
+ await assert.rejects(w.buildPhase(),/Argo sync failed/);assert.equal(finished,true);assert.equal(w.data.imageDigest,digest);
+ w.completePlatform=async()=>{};await w.buildPhase();assert.equal(builds,1);assert.equal(w.data.phase,'PLATFORM_READY');
+});
+test('promotion refuses to start before platform readiness completes',async()=>{
+ const w=workflow();w.gitopsFiles=async()=>({});w.data.imageDigest=digest;await assert.rejects(w.promote(),/Platform readiness has not completed/);
+});
+test('the compatibility wrapper runs exactly the template phases in order',async()=>{
+ const w=workflow();const events=[];for(const phase of DELIVERY_PHASES)w[phase]=async()=>events.push(phase);await w.delivery();assert.deepEqual(events,DELIVERY_PHASES);
+ const template=YAML.parse(await fs.readFile(path.resolve(__dirname,'../templates/quarkus-rest-service/template.yaml'),'utf8'));
+ const actions=template.spec.steps.map(step=>step.action);
+ const phaseActions=actions.filter(action=>action.startsWith('box1:development:'));
+ const registered=await fs.readFile(path.resolve(__dirname,'../plugins/box1-onboarding/index.cjs'),'utf8');
+ const operationFor=action=>registered.match(new RegExp(`action\\('${action}','([a-zA-Z]+)'`))?.[1];
+ assert.deepEqual(phaseActions.map(operationFor),DELIVERY_PHASES);
+ for(const action of actions.filter(item=>item.startsWith('box1:')))assert(registered.includes(`'${action}'`),'Unregistered action '+action);
+ assert(actions.indexOf('box1:catalog:submit')<actions.indexOf('box1:development:provision'));assert.equal(actions.at(-1),'box1:catalog:verify');
+ assert.equal(operationFor('box1:development:onboard'),'delivery');
+});
+test('the wrapper completes against a resourceVersion-enforcing API with real state and Lease writes',async()=>{
+ const ci='/api/v1/namespaces/box1-ci/serviceaccounts/',rbac='/apis/rbac.authorization.k8s.io/v1/namespaces/',apps='/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/';
+ const observer={metadata:{name:name+'-release-observer'},roleRef:{name:name+'-release-observer'},subjects:[{name:'ci-observe',namespace:'box1-ci'}]};
+ const w=workflow();
+ const objects={...stateRecord(),
+  '/apis/coordination.k8s.io/v1/namespaces/rhdh/leases/box1-onboard-orders-api':{metadata:{resourceVersion:'1'},spec:{holderIdentity:w.holder}},
+  ['/api/v1/namespaces/'+name+'-dev']:{status:{phase:'Active'}},
+  [`/api/v1/namespaces/${name}-dev/serviceaccounts/${name}`]:{},[ci+'ci-build']:{},[ci+'ci-gitops']:{},[ci+'ci-observe']:{},
+  [`${rbac}box1-ci/rolebindings/ci-build-image-builder`]:{roleRef:{name:'system:image-builder'},subjects:[{name:'ci-build',namespace:'box1-ci'}]},
+  [`${rbac}box1-ci/rolebindings/${name}-image-puller`]:{roleRef:{name:'system:image-puller'},subjects:[{name,namespace:name+'-dev'}]},
+  [`${rbac}${name}-dev/roles/${name}-release-observer`]:observer,[`${rbac}${name}-dev/rolebindings/${name}-release-observer`]:observer,
+  [`${rbac}openshift-gitops/roles/${name}-release-observer`]:observer,[`${rbac}openshift-gitops/rolebindings/${name}-release-observer`]:observer,
+  [`/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/${name}`]:{spec:{url:`https://github.com/box1-org/${name}`}},
+  [`/apis/apps/v1/namespaces/${name}-dev/deployments/${name}`]:{},
+  [apps+'box1-workloads-dev']:argoApp('Synced'),[apps+name]:{...argoApp('Synced'),spec:{...argoApp('Synced').spec,destination:{namespace:name+'-dev'}}},
+ };
+ const kube=versionedKube(objects);w.kube=kube;realState(w,kube);w.renew=Workflow.prototype.renew.bind(w);
+ w.data={...w.data,phase:'ONBOARDING_MERGED',history:[],onboardingPR:{merged:true,mergeCommit}};
+ const order=[];w.provision=async()=>order.push('provision');w.promote=async()=>order.push('promote');w.verify=async()=>order.push('verify');
+ w.build=async()=>{await w.save('BUILD_RUNNING',{pipelineName:'run'});await w.wait('initial CI build run',1,async()=>true);await w.save('IMAGE_BUILT',{imageDigest:digest});};
+ await w.delivery();
+ assert.deepEqual(order,['provision','promote','verify']);assert.equal(w.data.imageDigest,digest);assert(w.platformComplete());
+ assert.deepEqual(kube.writes.filter(item=>item.status!==200),[],'no write may conflict');
 });

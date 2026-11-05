@@ -97,13 +97,13 @@ spec:
         name: ${{ parameters.name }}
         sourceRevision: ${{ steps.publish.output.commitHash }}
     - id: platform
-      name: Synchronize and wait for platform readiness
+      name: Request platform sync and wait for build prerequisites
       action: box1:development:platform
       input:
         name: ${{ parameters.name }}
         sourceRevision: ${{ steps.publish.output.commitHash }}
     - id: build
-      name: Build the immutable first image
+      name: Build the immutable first image while platform readiness completes
       action: box1:development:build
       input:
         name: ${{ parameters.name }}

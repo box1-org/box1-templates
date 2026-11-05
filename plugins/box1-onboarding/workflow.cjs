@@ -13,11 +13,24 @@ const APPS = '/apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/application
 const WORKLOADS_APP = 'box1-workloads-dev';
 const WORKLOADS_REPO = 'https://github.com/box1-org/box1-workloads-dev';
 const LEASES = '/apis/coordination.k8s.io/v1/namespaces/rhdh/leases';
+const DELIVERY_PHASES = ['provision','platform','buildPhase','promote','verify'];
 const NAME = /^(?!quarkus-reference$)(?!orders-service$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 function check(ok, message) { if (!ok) throw new Error(message); }
 function validateName(name) { check(typeof name === 'string' && name.length >= 3 && name.length <= 35 && NAME.test(name), 'Only new, non-reserved development service names are allowed'); return name; }
 function blobSha(content) { return crypto.createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex'); }
 function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function normalizeRepo(value) { return (value||'').replace(/\/$/,'').replace(/\.git$/,''); }
+function workloadSource(app) { return app?.spec?.source||(app?.spec?.sources||[]).find(s=>normalizeRepo(s.repoURL)===WORKLOADS_REPO); }
+function syncedAt(app, revision) {
+  const source=workloadSource(app),status=app?.status,observed=status?.sync?.revision||status?.sync?.revisions;
+  if(normalizeRepo(source?.repoURL)!==WORKLOADS_REPO||status?.sync?.status!=='Synced'||status?.health?.status!=='Healthy')return false;
+  return Array.isArray(observed)?observed.includes(revision):observed===revision;
+}
+function syncDetails(app, name, revision) {
+  const status=app?.status||{},operation=status.operationState||{},sync=status.sync||{},health=status.health||{};
+  const messages=[...(status.conditions||[]).map(c=>c.message).filter(Boolean),operation.message].filter(Boolean);
+  return `Argo ${name} sync did not complete: expected revision ${revision}, observed ${sync.revision||JSON.stringify(sync.revisions)||'none'}, sync ${sync.status||'unknown'}, health ${health.status||'unknown'}, operation ${operation.phase||'none'}${messages.length?`, ${messages.join('; ')}`:''}`;
+}
 async function filesAt(root, prefix = '') {
   const result = {};
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
@@ -96,8 +109,8 @@ class Kube {
   get(p) { return this.request('GET',p,undefined,true); }
 }
 class Workflow {
-  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); }
-  log(phase, state, extra={}) { const fields={onboardingId:this.data?.id||this.executionId,phase,state,...extra}; this.ctx.logger.info(Object.entries(fields).map(([k,v])=>`${k}=${String(v).replace(/\s+/g,'_')}`).join(' ')); }
+  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); this.activeWaits=new Set(); this.saveQueue=Promise.resolve(); }
+  log(phase, state, extra={}) { const fields={onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,phase,state,...extra}; this.ctx.logger.info(Object.entries(fields).map(([k,v])=>`${k}=${String(v).replace(/\s+/g,'_')}`).join(' ')); }
   async github(p, method='GET', body, options={}) {
     const { token } = options.token ? {token:options.token} : await this.credentials.getCredentials({url:'https://github.com/'+ORG});
     const response=await fetch('https://api.github.com'+p, {method, headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:body===undefined?undefined:JSON.stringify(body), signal:AbortSignal.timeout(45000)});
@@ -115,96 +128,120 @@ class Workflow {
   }
   async renew() {
     check(!this.ctx.signal?.aborted,'Onboarding task was cancelled; submit the same service parameters to resume');
+    // Concurrent waits share one renewal: overlapping GET/PUT pairs would conflict on the Lease resourceVersion.
+    this.renewal??=this.renewLease().finally(()=>{this.renewal=null;});
+    return this.renewal;
+  }
+  async renewLease() {
     const current=await this.kube.get(LEASES+'/'+this.key);check(current?.spec.holderIdentity===this.holder,'Onboarding lease lost');
     this.lease=await this.kube.request('PUT',LEASES+'/'+this.key,{...current,spec:{...current.spec,renewTime:new Date().toISOString().replace('Z','000Z')}});
   }
   async close() { if(this.lease) {const l=await this.kube.get(LEASES+'/'+this.key);if(l?.spec.holderIdentity===this.holder) await this.kube.request('PUT',LEASES+'/'+this.key,{...l,spec:{...l.spec,holderIdentity:'',leaseDurationSeconds:1}});} }
-  async save(phase, extra={}) {
+  // The build and platform observers overlap, so state writes run one at a time.
+  // Each write uses the resourceVersion left by the previous one; a 409 therefore
+  // means another process changed the record. A null phase keeps the current phase.
+  save(phase, extra={}) {
+    const write=this.saveQueue.then(()=>this.writeState(phase,extra));
+    this.saveQueue=write.catch(()=>{});
+    return write;
+  }
+  async writeState(requestedPhase, extra) {
     const previous=this.data?.phase;
+    const phase=requestedPhase??previous;
     const now=new Date().toISOString();
-    this.data={schemaVersion:2,...this.data,onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,serviceName:this.name,phase,phaseStatus:'succeeded',phaseStartedAt:previous===phase?(this.data?.phaseStartedAt||now):now,lastTransitionAt:previous===phase?(this.data?.lastTransitionAt||now):now,updatedAt:now,...extra};
+    const status=extra.phaseStatus||(requestedPhase?'succeeded':this.data?.phaseStatus);
+    this.data={schemaVersion:2,...this.data,onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,serviceName:this.name,phase,phaseStatus:status,phaseStartedAt:previous===phase?(this.data?.phaseStartedAt||now):now,lastTransitionAt:previous===phase?(this.data?.lastTransitionAt||now):now,updatedAt:now,activeWaits:[...this.activeWaits],...extra};
     if(phase!=='FAILED') {this.data.lastSuccessfulState=phase;delete this.data.error;}
     this.data.history=[...(this.data.history||[]),...(previous===phase?[]:[{phase,at:this.data.updatedAt}])].slice(-40);
     const obj={apiVersion:'v1',kind:'ConfigMap',metadata:{name:this.key,namespace:'rhdh',labels:{'box1.org/onboarding':this.name},...(this.cm?{resourceVersion:this.cm.metadata.resourceVersion}:{})},data:{'status.json':JSON.stringify(this.data)}};
-    this.cm=await this.kube.request(this.cm?'PUT':'POST',this.cm?ROOT+'/configmaps/'+this.key:ROOT+'/configmaps',obj);
+    try {
+      this.cm=await this.kube.request(this.cm?'PUT':'POST',this.cm?ROOT+'/configmaps/'+this.key:ROOT+'/configmaps',obj);
+    } catch(error) {
+      if(error.status===409) {
+        const latest=await this.kube.get(ROOT+'/configmaps/'+this.key);
+        if(latest) { this.cm=latest; try { this.data=JSON.parse(latest.data['status.json']); } catch {} }
+        error.code='ONBOARDING_STATE_CONFLICT';
+      }
+      throw error;
+    }
     if(previous!==phase) this.log(phase,'succeeded',{elapsed: this.data.phaseStartedAt ? Math.round((Date.now()-Date.parse(this.data.phaseStartedAt))/1000)+'s' : '0s'});
   }
-  async wait(label, seconds, observe) {
-    const deadline=Date.now()+seconds*1000;let last;const phase=this.data?.phase||'unknown';const started=Date.now();this.log(phase,'waiting',{condition:label,elapsed:'0s'});
-    while(Date.now()<deadline) {
-      await this.renew();
-      const result=await observe(); if(result===true||result?.done) return result?.value;
-      const reason=typeof result==='string'?result:label;
-      if(reason!==last){this.log(phase,'waiting',{condition:reason,elapsed:Math.round((Date.now()-started)/1000)+'s'});last=reason;}
-      await pause(5000,undefined,{signal:this.ctx.signal});
-    }
-    throw new Error('Timed out waiting for '+label+'; retry the same service to resume. Status: rhdh/'+this.key);
+  async wait(label, seconds, observe, {signal=this.ctx.signal,logPhase}={}) {
+    const deadline=Date.now()+seconds*1000;let last;const phase=logPhase||this.data?.phase||'unknown';const started=Date.now();
+    this.activeWaits.add(label);
+    try {
+      if(this.data) await this.save(null,{phaseStatus:'waiting',waitCondition:label});
+      this.log(phase,'waiting',{condition:label,elapsed:'0s'});
+      while(Date.now()<deadline) {
+        signal?.throwIfAborted();
+        await this.renew();
+        const result=await observe(); if(result===true||result?.done) return result?.value;
+        const reason=typeof result==='string'?result:label;
+        if(reason!==last){this.log(phase,'waiting',{condition:reason,elapsed:Math.round((Date.now()-started)/1000)+'s'});last=reason;}
+        await pause(5000,undefined,{signal});
+      }
+      throw new Error('Timed out waiting for '+label+'; retry the same service to resume. Status: rhdh/'+this.key);
+    } finally { this.activeWaits.delete(label); }
   }
-  async syncApplication(applicationName, expectedRevision, label) {
+  // Waits for any running operation to end, then requests the sync. Returns the
+  // request time, or null when the Application is already at the expected revision.
+  async requestApplicationSync(applicationName, expectedRevision, label) {
     check(/^[a-f0-9]{40}$/.test(expectedRevision), 'GitOps merge commit is missing or invalid');
     const path=APPS+'/'+applicationName;
-    const normalize=value=>(value||'').replace(/\/$/,'').replace(/\.git$/,'');
-    const revisionMatches=(status,source)=>{
-      const observed=status?.sync?.revision||status?.sync?.revisions;
-      if(normalize(source?.repoURL)!==WORKLOADS_REPO)return false;
-      return Array.isArray(observed)?observed.includes(expectedRevision):observed===expectedRevision;
-    };
-    const details=app=>{
-      const status=app?.status||{},operation=status.operationState||{},sync=status.sync||{},health=status.health||{};
-      const messages=[...(status.conditions||[]).map(c=>c.message).filter(Boolean),operation.message].filter(Boolean);
-      return `Argo ${applicationName} sync did not complete: expected revision ${expectedRevision}, observed ${sync.revision||JSON.stringify(sync.revisions)||'none'}, sync ${sync.status||'unknown'}, health ${health.status||'unknown'}, operation ${operation.phase||'none'}${messages.length?`, ${messages.join('; ')}`:''}`;
-    };
-    const observe=async()=>{
+    await this.wait(label+' before sync',300,async()=>{
       const app=await this.kube.get(path);if(!app)return `${applicationName} Application exists`;
-      const source=app.spec?.source||(app.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
-      const operation=app.status?.operationState||{};const active=['Running','Terminating'].includes(operation.phase);
-      if(active)return `${applicationName} has an active Argo operation`;
-      if(['Error','Failed'].includes(operation.phase))throw new Error(details(app));
-      if(source&&app.status?.sync?.status==='Synced'&&app.status?.health?.status==='Healthy'&&revisionMatches(app.status,source))return true;
-      return `${applicationName} is ${app.status?.sync?.status||'not synced'}/${app.status?.health?.status||'not healthy'} at ${app.status?.sync?.revision||'no revision'}`;
-    };
-    await this.wait(label+' before sync',300,observe);
+      const operation=app.status?.operationState||{};
+      if(['Running','Terminating'].includes(operation.phase))return `${applicationName} has an active Argo operation`;
+      if(['Error','Failed'].includes(operation.phase))throw new Error(syncDetails(app,applicationName,expectedRevision));
+      return true;
+    });
     const app=await this.kube.get(path);check(app,`${applicationName} Application does not exist`);
-    const source=app.spec?.source||(app.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
-    check(source&&normalize(source.repoURL)===WORKLOADS_REPO,`${applicationName} Application does not track ${WORKLOADS_REPO}`);
-    const operation=app.status?.operationState||{};
-    if(app.status?.sync?.status==='Synced'&&app.status?.health?.status==='Healthy'&&revisionMatches(app.status,source)){
-      this.ctx.logger.info(`${applicationName} already Synced/Healthy at ${app.status.sync.revision||JSON.stringify(app.status.sync.revisions)}`);return;
+    const source=workloadSource(app);
+    check(source&&normalizeRepo(source.repoURL)===WORKLOADS_REPO,`${applicationName} Application does not track ${WORKLOADS_REPO}`);
+    if(syncedAt(app,expectedRevision)){
+      this.ctx.logger.info(`${applicationName} already Synced/Healthy at ${app.status.sync.revision||JSON.stringify(app.status.sync.revisions)}`);return null;
     }
     const requestStarted=Date.now();
     const sync={syncStrategy:{hook:{}}};
-    if(source) {
-      if(app.spec?.sources?.length) sync.revisions=app.spec.sources.map(item=>normalize(item.repoURL)===WORKLOADS_REPO?expectedRevision:(item.targetRevision||'HEAD'));
-      else sync.revision=expectedRevision;
-    }
+    if(app.spec?.sources?.length) sync.revisions=app.spec.sources.map(item=>normalizeRepo(item.repoURL)===WORKLOADS_REPO?expectedRevision:(item.targetRevision||'HEAD'));
+    else sync.revision=expectedRevision;
     await this.kube.request('PATCH',path,{operation:{initiatedBy:{username:'box1-rhdh'},sync}});
+    return requestStarted;
+  }
+  async awaitApplicationSync(applicationName, expectedRevision, label, requestStarted, options) {
+    const path=APPS+'/'+applicationName;
     await this.wait(label+' requested Argo sync',300,async()=>{
-      const current=await this.kube.get(path);if(!current)return details(current);
-      const state=current.status||{},op=state.operationState||{};
-      if(['Error','Failed'].includes(op.phase))throw new Error(details(current));
+      const current=await this.kube.get(path);if(!current)return syncDetails(current,applicationName,expectedRevision);
+      const op=current.status?.operationState||{};
+      if(['Error','Failed'].includes(op.phase))throw new Error(syncDetails(current,applicationName,expectedRevision));
       const started=op.startedAt?Date.parse(op.startedAt):0;
-      const sourceNow=current.spec?.source||(current.spec?.sources||[]).find(s=>normalize(s.repoURL)===WORKLOADS_REPO);
-      if(op.phase==='Succeeded'&&started>=requestStarted-5000&&state.sync?.status==='Synced'&&state.health?.status==='Healthy'&&revisionMatches(state,sourceNow))return true;
-      return details(current);
-    });
+      if(op.phase==='Succeeded'&&started>=requestStarted-5000&&syncedAt(current,expectedRevision))return true;
+      return syncDetails(current,applicationName,expectedRevision);
+    },options);
     this.ctx.logger.info(`${applicationName} sync completed at ${expectedRevision}`);
   }
-  async syncNewServiceApplications() {
+  // Syncs the workload index so the service Application exists, then requests the
+  // service sync without waiting for it. awaitServiceSync observes the outcome.
+  async requestServiceSync() {
     const revision=this.data.onboardingPR?.mergeCommit;
-    await this.syncApplication(WORKLOADS_APP,revision,'box1-workloads-dev');
+    const indexRequested=await this.requestApplicationSync(WORKLOADS_APP,revision,'box1-workloads-dev');
+    if(indexRequested!==null) await this.awaitApplicationSync(WORKLOADS_APP,revision,'box1-workloads-dev',indexRequested);
     await this.wait('new service Argo Application creation',300,async()=>{
       const app=await this.kube.get(APPS+'/'+this.name);
       if(!app)return this.name+' Application exists';
       this.log('platform','ready',{condition:'service_application_created',application:this.name,namespace:'openshift-gitops'});
       return true;
     });
-    const service=await this.kube.get(APPS+'/'+this.name);
-    const source=service?.spec?.source||(service?.spec?.sources||[]).find(s=>String(s.repoURL||'').replace(/\/$/,'').replace(/\.git$/,'')===WORKLOADS_REPO);
-    const observed=service?.status?.sync?.revision||service?.status?.sync?.revisions;
-    const alreadyHealthy=service?.status?.sync?.status==='Synced'&&service?.status?.health?.status==='Healthy'&&source&&((Array.isArray(observed)&&observed.includes(revision))||observed===revision);
-    this.log('platform',alreadyHealthy?'ready':'waiting',{condition:'service_application_sync',application:this.name,observedRevision:Array.isArray(observed)?observed.join(','):observed||'none'});
-    if(!alreadyHealthy)await this.syncApplication(this.name,revision,this.name);
-    await this.save('PLATFORM_APPS_SYNCED',{applicationsSyncedAt:new Date().toISOString()});
+    const requested=await this.requestApplicationSync(this.name,revision,this.name);
+    const observed=(await this.kube.get(APPS+'/'+this.name))?.status?.sync;
+    this.log('platform',requested===null?'ready':'waiting',{condition:'service_application_sync',application:this.name,observedRevision:observed?.revision||observed?.revisions?.join(',')||'none'});
+    if(requested===null) await this.save('PLATFORM_APPS_SYNCED',{applicationsSyncedAt:new Date().toISOString()});
+    else await this.save('PLATFORM_SYNC_REQUESTED',{serviceSyncRequestedAt:new Date(requested).toISOString()});
+  }
+  async awaitServiceSync(options) {
+    if(this.data.applicationsSyncedAt) return;
+    await this.awaitApplicationSync(this.name,this.data.onboardingPR?.mergeCommit,this.name,Date.parse(this.data.serviceSyncRequestedAt),options);
+    await this.save(null,{applicationsSyncedAt:new Date().toISOString()});
   }
   async content(repo,file,ref='main') { const result=await this.github(`/repos/${ORG}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`,'GET',undefined,{missing:true});return result?Buffer.from(result.content,'base64').toString():null; }
   async repository() {
@@ -325,7 +362,7 @@ class Workflow {
       return true;
     });
   }
-  async platformReady({persist=true}={}) {
+  async platformReady(options) {
     const checks={
       namespace:async()=>{const v=await this.kube.get('/api/v1/namespaces/'+this.ns);return v?.status?.phase==='Active'||this.ns+' Namespace Active';},
       serviceaccounts:async()=>{const values=await Promise.all([[this.ns,this.name],['box1-ci','ci-build'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']].map(async([ns,name])=>[ns,name,await this.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
@@ -343,8 +380,13 @@ class Workflow {
       this.data.readiness={conditions:Object.fromEntries(results),elapsedSeconds:Math.round((Date.now()-started)/1000)};
       if(!pending.length)return true;
       return pending.map(([condition,state])=>`condition=${condition} state=${state}`).join('; ');
-    });
-    if(persist) await this.save('PLATFORM_READY');
+    },options);
+  }
+  platformComplete() { return Boolean(this.data.history?.some(item=>item.phase==='PLATFORM_READY')); }
+  async completePlatform({signal}) {
+    const options={signal,logPhase:'platform'};
+    await this.awaitServiceSync(options);
+    await this.platformReady(options);
   }
   async buildToken() {
     const app=this.config.getConfigArray('integrations.github')[0].getConfigArray('apps')[0];
@@ -408,19 +450,9 @@ class Workflow {
     }
     await this.save('IMAGE_BUILT',{imageDigest:digest});
   }
+  // Compatibility wrapper for box1:development:onboard: the same phases the template runs.
   async delivery() {
-    await this.provision();
-    // Argo synchronization and the full readiness set can run while the build
-    // waits only for its own namespace, build ServiceAccount, and push binding.
-    const syncPromise=this.data.applicationsSyncedAt?Promise.resolve():this.syncNewServiceApplications();
-    const readinessPromise=this.platformReady({persist:false});
-    await this.buildBarrier();
-    await this.buildPhase();
-    await syncPromise;
-    await readinessPromise;
-    await this.save('PLATFORM_READY');
-    await this.promote();
-    await this.verify();
+    for(const phase of DELIVERY_PHASES) await this[phase]();
   }
   async gitopsFiles() {
     check(this.data?.sourceRevision===this.ctx.input.sourceRevision,'Missing or mismatched repository checkpoint');
@@ -430,16 +462,33 @@ class Workflow {
     const files=await this.gitopsFiles();
     if(!this.data.onboardingPR?.merged) await this.pullRequest('onboarding',files);
   }
+  // Ends at the build's dependency boundary. The rest of platform readiness is
+  // observed during buildPhase, so the build does not wait on unrelated conditions.
   async platform() {
-    if(!this.data.applicationsSyncedAt) await this.syncNewServiceApplications();
-    if(!this.data.history?.some(item=>item.phase==='PLATFORM_READY')) await this.platformReady();
+    if(!this.data.applicationsSyncedAt&&!this.data.serviceSyncRequestedAt) await this.requestServiceSync();
+    if(!this.data.imageDigest) await this.buildBarrier();
   }
+  // Scaffolder steps run one at a time, so the overlap lives inside this action.
+  // That keeps the credential Secret's whole lifecycle within build(). A platform
+  // failure lets the build finish, so its digest is kept and cleanup runs; a build
+  // failure stops the platform observers.
   async buildPhase() {
-    if(!this.data.imageDigest) await this.build();
+    const observers=new AbortController();
+    const signal=this.ctx.signal?AbortSignal.any([this.ctx.signal,observers.signal]):observers.signal;
+    const build=(async()=>{if(!this.data.imageDigest) await this.build();})().catch(error=>{observers.abort(error);throw error;});
+    const platform=this.platformComplete()?Promise.resolve():this.completePlatform({signal}).catch(error=>{
+      if(!signal.aborted) this.log('platform','failed',{condition:error.message});
+      throw error;
+    });
+    const [built,ready]=await Promise.allSettled([build,platform]);
+    if(built.status==='rejected') throw built.reason;
+    if(ready.status==='rejected') throw ready.reason;
+    if(!this.platformComplete()) await this.save('PLATFORM_READY');
   }
   async promote() {
     const files=await this.gitopsFiles();
     if(!this.data.promotionPR?.merged) {
+      check(this.platformComplete(),'Platform readiness has not completed; retry the same service to resume');
       const paths=[`workloads/${this.name}/kustomization.yaml`,`workloads/${this.name}/deployment.yaml`];const updates={};
       for(const file of paths) updates[file]={...files[file]};
       check(updates[paths[0]].content.includes('digest: sha256:'+'0'.repeat(64)),'First release requires the unbuilt development image');
@@ -500,7 +549,7 @@ class Workflow {
   }
   async run(operation) {
     try{await this.open();this.log(operation,'running');await this[operation]();}
-    catch(error){if(this.data)try{await this.save('FAILED',{phaseStatus:'failed',error:error.message,lastErrorCode:error.code||'ONBOARDING_FAILED',lastErrorMessage:error.message,failedDuring:this.data.phase,failedAt:new Date().toISOString()});}catch{}throw error;}
+    catch(error){if(this.data)try{const cancelled=this.ctx.signal?.aborted;await this.save(cancelled?'CANCELLED':'FAILED',{phaseStatus:cancelled?'cancelled':'failed',error:error.message,lastErrorCode:error.code|| (cancelled?'ONBOARDING_CANCELLED':'ONBOARDING_FAILED'),lastErrorMessage:error.message,failedDuring:this.data.phase,failedAt:new Date().toISOString()});}catch{}throw error;}
     finally{await this.close();}
   }
 }
@@ -525,4 +574,4 @@ async function ensureCatalog(catalog,ctx) {
   }
   throw new Error('Catalog registration did not resolve '+ref+' within five minutes; resume the same onboarding request');
 }
-module.exports={Workflow,Kube,validateName,validateBundle,filesAt,blobSha,ensureCatalog};
+module.exports={DELIVERY_PHASES,Workflow,Kube,validateName,validateBundle,filesAt,blobSha,ensureCatalog};

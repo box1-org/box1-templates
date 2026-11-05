@@ -5,7 +5,8 @@
   "scripts": {
     "validate": "node scripts/validate.mjs",
     "test:onboarding": "node --test scripts/test-onboarding.cjs",
-    "package:onboarding": "node scripts/package-onboarding.mjs"
+    "package:onboarding": "node scripts/package-onboarding.mjs",
+    "check:onboarding-package": "node scripts/check-onboarding-package.mjs"
   },
   "devDependencies": {
     "ajv": "8.17.1",
