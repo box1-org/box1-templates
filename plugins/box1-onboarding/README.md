@@ -5,13 +5,28 @@ It registers `box1:repository:ensure`, the `box1:development:` actions `provisio
 `platform`, `build`, `promote`, `verify` and `onboard`, and the `box1:catalog:` actions
 `submit`, `verify` and `ensure`.
 No private runtime dependencies are bundled; the compatible Hub image supplies
-the declared peer dependencies. Run `npm run package:onboarding` from
-box1-templates to copy the three runtime files into the sibling box1-gitops
-ConfigMap transport and refresh the Deployment source checksum. Review/publish
-both repositories together; `npm run check:onboarding-package` detects drift. The installer stages real files because npm pack
-ignores ConfigMap-volume symlinks. The adapter invalidates only this small local
-module's cache hash on every boot to avoid the 1.9 local-package reinstall cleanup
-removing the new module; installed third-party plugins retain their caches.
+the declared peer dependencies.
+
+RHDH installs this module from a digest-pinned OCI image. `box1-gitops` holds only
+the reference, never the source:
+
+```text
+oci://registry.apps.ocp.box1.org/box1-plugins/box1-onboarding-plugin@sha256:<digest>!box1-scaffolder-onboarding
+```
+
+To build it locally, run `npm ci --prefix tools/rhdh-cli`, then
+`npm run package:onboarding-oci -- --tag <image>`. This uses the RHDH CLI version
+pinned in `tools/rhdh-cli`, which must match the deployed RHDH version. The CLI
+derives `${name}-dynamic`, so the package is staged without the suffix: the runtime
+package name stays `box1-scaffolder-onboarding-dynamic`, and the image path is
+`box1-scaffolder-onboarding`. The package is private and is not published to npm.
+
+To release, raise `version` in `package.json`, merge to `main`, and tag that commit
+`onboarding-plugin-v<version>`. CI publishes the image, confirms the digest in the
+registry is this build, and opens a `box1-gitops` PR. Argo CD applies it after merge
+and sync. Each version can be released once, so a failed release needs a new version.
+The release, verification, rollback, and credential rotation procedures are in
+`box1-docs/runbooks/rhdh-onboarding-plugin-oci.md`.
 
 The source repository marker and a durable `rhdh/box1-onboard-<name>` ConfigMap
 bind one request to one source repository, development namespace, PR pair and

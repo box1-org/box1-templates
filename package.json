@@ -5,8 +5,6 @@
   "scripts": {
     "validate": "node scripts/validate.mjs",
     "test:onboarding": "node --test scripts/test-onboarding.cjs",
-    "package:onboarding": "node scripts/package-onboarding.mjs",
-    "check:onboarding-package": "node scripts/check-onboarding-package.mjs",
     "package:onboarding-oci": "node scripts/package-onboarding-oci.mjs",
     "inspect:onboarding-oci": "node scripts/inspect-onboarding-oci.mjs",
     "test:onboarding-oci": "node --test scripts/test-onboarding-oci.mjs"

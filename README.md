@@ -76,10 +76,10 @@ parameters to resume. Existing unowned repositories and reserved baseline names
 are refused. State is recorded in `rhdh/box1-onboard-<name>` with a concurrency
 Lease. See the module guide for scope, credentials, retries and diagnostics.
 
-Maintain the runtime source here and run `npm run package:onboarding` to update
-the GitOps ConfigMap transport and rollout checksum in the sibling box1-gitops
-checkout. Validate with `npm run validate && npm run test:onboarding` and compare
-the action inputs with the installed Hub schemas before rollout.
+Maintain the runtime source here. Validate with `npm run validate &&
+npm run test:onboarding && npm run test:onboarding-oci` and compare the action
+inputs with the installed Hub schemas before rollout. A tagged release publishes
+a digest-pinned OCI image and opens the GitOps PR; see the module guide.
 
 ## Development repository
 

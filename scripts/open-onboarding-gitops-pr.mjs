@@ -17,14 +17,12 @@ export function runtimeReference(oci, digest) {
   return `oci://${oci.registry}/${oci.repository}@${digest}!${oci.pluginPath}`;
 }
 
-// Returns null when the runtime has not been cut over to an OCI reference yet.
 export function planRuntimeUpdate(oci, files, digest, revision) {
   if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error(`Malformed revision: ${revision}`);
   const target = runtimeReference(oci, digest);
   const entry = new RegExp(`^(\\s*- package: )oci://${escapeRegExp(`${oci.registry}/${oci.repository}`)}([@:][^!\\s]+)!(\\S+)[ \\t]*$`, 'gm');
   const matches = [...files.dynamicPlugins.matchAll(entry)];
-  if (matches.length === 0) return null;
-  if (matches.length > 1) throw new Error('More than one active onboarding plugin definition');
+  if (matches.length !== 1) throw new Error(`Expected one active onboarding plugin definition, found ${matches.length}`);
   const [{ 2: version, 3: pluginPath }] = matches;
   if (pluginPath !== oci.pluginPath) throw new Error(`Configured plugin path is ${pluginPath}, expected ${oci.pluginPath}`);
   const rollbackDigest = version.slice(1);
@@ -90,10 +88,6 @@ export async function publish(oci, artifact, token) {
   };
   const files = { dynamicPlugins: await read(DYNAMIC_PLUGINS), backstage: await read(BACKSTAGE) };
   const plan = planRuntimeUpdate(oci, files, artifact.digest, artifact.revision);
-  if (!plan) {
-    console.log('box1-gitops has no OCI onboarding plugin reference yet; no PR opened.');
-    return null;
-  }
   if (plan.unchanged) {
     console.log(`box1-gitops already uses ${artifact.digest}; no PR opened.`);
     return null;
