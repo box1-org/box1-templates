@@ -8,3 +8,16 @@ spec:
   targets:
     - ./templates/quarkus-rest-service/template.yaml
     - ./templates/github-repository/template.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: box1-templates
+  description: Box1 software templates and the Developer Hub onboarding plugin
+  annotations:
+    github.com/project-slug: box1-org/box1-templates
+  tags: [repository, backstage, software-templates]
+spec:
+  type: repository
+  lifecycle: experimental
+  owner: user:default/mike4263

@@ -43,7 +43,7 @@ a checked first-image promotion. Only Argo CD applies workload manifests.
 
 ## Layout and validation
 
-- `catalog-info.yaml`: Location for registration/discovery.
+- `catalog-info.yaml`: Location for registration/discovery, and this repository's catalog Component.
 - `templates/quarkus-rest-service/template.yaml`: supported scaffolder actions.
 - `templates/quarkus-rest-service/skeleton/`: application repository.
 - `templates/quarkus-rest-service/gitops/`: allowlisted onboarding files.

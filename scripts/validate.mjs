@@ -131,7 +131,13 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
 const repositorySource = path.join(root, 'templates/github-repository');
 const repositoryTemplate = YAML.parse(fs.readFileSync(path.join(repositorySource, 'template.yaml'), 'utf8'));
 const checkRepositoryForm = ajv.compile(repositoryTemplate.spec.parameters[0]);
-assert(YAML.parse(fs.readFileSync(path.join(root, 'catalog-info.yaml'), 'utf8')).spec.targets.includes('./templates/github-repository/template.yaml'));
+const rootEntities = YAML.parseAllDocuments(fs.readFileSync(path.join(root, 'catalog-info.yaml'), 'utf8')).map(d => d.toJSON());
+const rootLocation = rootEntities.find(e => e.kind === 'Location');
+for (const target of rootLocation.spec.targets) assert(fs.existsSync(path.join(root, target)), `Missing Location target: ${target}`);
+assert(rootLocation.spec.targets.includes('./templates/github-repository/template.yaml'));
+const rootComponent = rootEntities.find(e => e.kind === 'Component');
+assert.equal(rootComponent.metadata.name, 'box1-templates');
+assert.equal(rootComponent.metadata.annotations['github.com/project-slug'], 'box1-org/box1-templates');
 assert.equal(repositoryTemplate.spec.parameters[0].properties.visibility.default, 'public');
 assert.deepEqual(repositoryTemplate.spec.steps.map(step => step.action), ['fetch:template', 'publish:github', 'catalog:register']);
 for (const name of ['team-notes', 'box1-example-docs', 'a'.repeat(63)]) {
