@@ -20,7 +20,7 @@ test('phase resume reuses completed provision, platform, build, and promotion wo
  w.data.onboardingPR={merged:true};await w.provision();assert.equal(calls,0);
  w.data={...w.data,applicationsSyncedAt:'now',history:[{phase:'PLATFORM_READY'}],imageDigest:digest};w.requestServiceSync=async()=>{calls++;};w.buildBarrier=async()=>{calls++;};await w.platform();assert.equal(calls,0);
  w.completePlatform=async()=>{calls++;};w.build=async()=>{calls++;};await w.buildPhase();assert.equal(calls,0);
- w.data.promotionPR={merged:true};await w.promote();assert.equal(calls,0);
+ w.data.promotionPR={merged:true};w.data.promotionSync={revision:sha,requestedAt:null};await w.promote();assert.equal(calls,0);
 });
 test('restart after onboarding PR creation validates and resumes the existing PR',async()=>{
  const w=workflow();let merged=0;const pr={number:7,head:{sha,ref:'onboard/'+name},merged_at:null};
@@ -309,4 +309,44 @@ test('the wrapper completes against a resourceVersion-enforcing API with real st
  await w.delivery();
  assert.deepEqual(order,['provision','promote','verify']);assert.equal(w.data.imageDigest,digest);assert(w.platformComplete());
  assert.deepEqual(kube.writes.filter(item=>item.status!==200),[],'no write may conflict');
+});
+
+const promotionCommit='e'.repeat(40);
+function promotedWorkflow(appState){
+ const patches=[];const w=workflow({get:async()=>appState(),request:async(method,p,body)=>{assert.equal(method,'PATCH');patches.push({p,body});return {};}});
+ w.gitopsFiles=async()=>({});w.wait=async(label,_seconds,fn)=>{assert.equal(await fn(),true,label);};
+ w.data={...w.data,imageDigest:digest,history:[{phase:'PLATFORM_READY'}],promotionPR:{merged:true,mergeCommit:promotionCommit}};
+ return {w,patches};
+}
+test('promotion requests a sync when Argo still reports Synced at the previous revision',async()=>{
+ const {w,patches}=promotedWorkflow(()=>argoApp('Synced',mergeCommit));
+ await w.promote();
+ assert.equal(patches.length,1);assert(patches[0].p.endsWith('/applications/orders-api'));assert.equal(patches[0].body.operation.sync.revision,promotionCommit);
+ assert.equal(w.data.promotionSync.revision,promotionCommit);assert(w.data.promotionSync.requestedAt);assert.equal(w.data.phase,'PROMOTION_SYNC_REQUESTED');
+});
+test('promotion requests its sync after the PR merges, and a retry does not repeat it',async()=>{
+ const {w,patches}=promotedWorkflow(()=>argoApp('Synced',mergeCommit));const events=[];
+ w.data.promotionPR=undefined;w.content=async()=>null;w.pullRequest=async stage=>{events.push(stage+':'+patches.length);w.data.promotionPR={merged:true,mergeCommit:promotionCommit};};
+ const kustomization=`workloads/${name}/kustomization.yaml`,deployment=`workloads/${name}/deployment.yaml`;
+ const files={[kustomization]:{content:'digest: sha256:'+'0'.repeat(64)},[deployment]:{content:'  replicas: 0\n    box1.org/source-revision: '+sha}};
+ w.gitopsFiles=async()=>files;w.content=async(_repo,file)=>files[file].content;
+ await w.promote();assert.deepEqual(events,['promotion:0']);assert.equal(patches.length,1);
+ await w.promote();assert.deepEqual(events,['promotion:0']);assert.equal(patches.length,1);
+});
+test('a restart between the promotion merge and the sync request still requests the sync',async()=>{
+ const {w,patches}=promotedWorkflow(()=>argoApp('OutOfSync',mergeCommit));let merges=0;w.pullRequest=async()=>{merges++;};
+ await w.promote();assert.equal(merges,0);assert.equal(patches.length,1);
+});
+test('promotion records an Application already at the merged revision without a sync request',async()=>{
+ const {w,patches}=promotedWorkflow(()=>argoApp('Synced',promotionCommit));
+ await w.promote();assert.equal(patches.length,0);assert.deepEqual(w.data.promotionSync,{revision:promotionCommit,requestedAt:null});
+});
+test('verify fails at once when the requested promotion sync fails, but ignores an older failure',async()=>{
+ const requestedAt=new Date().toISOString();
+ const failedAt=at=>({...argoApp('OutOfSync',mergeCommit,{phase:'Failed',startedAt:at,message:'hook failed'})});
+ const verifying=app=>{const w=workflow({get:async p=>p.includes('/applications/')?app:null});w.data={...w.data,imageDigest:digest,promotionSync:{revision:promotionCommit,requestedAt}};return w;};
+ const current=verifying(failedAt(requestedAt));current.wait=async(_label,_seconds,fn)=>fn();
+ await assert.rejects(current.verify(),/hook failed/);
+ const older=verifying(failedAt(new Date(Date.now()-3600000).toISOString()));let observed;older.wait=async(_label,_seconds,fn)=>{observed=await fn();throw new Error('stop');};
+ await assert.rejects(older.verify(),/stop/);assert.equal(observed,'Argo CD Synced and Healthy');
 });
