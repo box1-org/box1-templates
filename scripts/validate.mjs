@@ -101,6 +101,10 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
   assert.equal(api.spec.owner, parameters.owner);
   assert.equal(api.spec.definition.$text, `https://${name}-dev.apps.ocp.box1.org/q/openapi`);
   assert(catalog.metadata.links.some(l => l.url === `https://${name}-dev.apps.ocp.box1.org/q/swagger-ui/`));
+  assert(catalog.metadata.links.some(l => l.url === 'https://devspaces.apps.ocp.box1.org/dashboard/#/create-workspace'));
+  assert.equal(catalog.metadata.annotations['backstage.io/techdocs-ref'], 'dir:.');
+  assert.equal(YAML.parse(fs.readFileSync(path.join(app, 'mkdocs.yml'), 'utf8')).site_name, name);
+  assert(fs.existsSync(path.join(app, 'docs/index.md')), 'TechDocs home page is missing');
   assert.equal(catalog.spec.owner, parameters.owner);
   assert.equal(catalog.metadata.name, name);
   assert.equal(catalog.metadata.annotations['backstage.io/kubernetes-id'], name);

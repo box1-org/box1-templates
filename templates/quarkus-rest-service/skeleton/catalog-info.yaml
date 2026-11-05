@@ -6,6 +6,7 @@ metadata:
   annotations:
     github.com/project-slug: box1-org/${{ values.name }}
     backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/techdocs-ref: dir:.
     janus-idp.io/tekton: ${{ values.name }}
     argocd/instance-name: openshift-gitops
     argocd/app-selector: backstage.io/kubernetes-id=${{ values.name }}
@@ -22,6 +23,9 @@ metadata:
       title: Application Route (after first release)
     - url: https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${{ values.name }}
       title: Desired deployment configuration
+    - url: https://devspaces.apps.ocp.box1.org/dashboard/#/create-workspace
+      title: Open in Dev Spaces
+      icon: code
 spec:
   type: service
   lifecycle: experimental
