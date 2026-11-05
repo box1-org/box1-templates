@@ -60,6 +60,11 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
       const postgresSecret = resources.find(r => r.kind === 'Secret' && r.metadata.name === `${name}-postgres`);
       const postgresPvc = resources.find(r => r.kind === 'PersistentVolumeClaim' && r.metadata.name === `${name}-postgres-data`);
       const kafkaTopics = resources.filter(r => r.kind === 'KafkaTopic');
+      const postgresPolicy = resources.find(r => r.kind === 'NetworkPolicy' && r.metadata.name === `${name}-postgres`);
+      assert.equal(Boolean(postgresPolicy), Boolean(parameters.postgres));
+      const runtimeConfig = resources.find(r => r.kind === 'ConfigMap');
+      assert.equal(runtimeConfig.data.KAFKA_BOOTSTRAP_SERVERS === 'box1-kafka-kafka-bootstrap.box1-kafka.svc:9092', Boolean(parameters.kafka));
+      assert.match(runtimeConfig.data.JAVA_TOOL_OPTIONS, /MaxRAMPercentage=50\.0/);
       assert.equal(Boolean(postgres), Boolean(parameters.postgres));
       assert.equal(Boolean(postgresSecret), Boolean(parameters.postgres));
       assert.equal(Boolean(postgresPvc), Boolean(parameters.postgres));
@@ -68,6 +73,9 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
         assert.equal(postgres.spec.template.spec.containers[0].envFrom[0].secretRef.name, `${name}-postgres`);
         assert.equal(postgresPvc.spec.resources.requests.storage, '5Gi');
         assert.equal(postgresSecret.stringData.POSTGRESQL_PASSWORD, 'replace-before-sync');
+        assert.equal(postgres.spec.template.spec.containers[0].resources.limits.memory, '512Mi');
+        assert.equal(postgresPolicy.spec.podSelector.matchLabels['app.kubernetes.io/name'], `${name}-postgres`);
+        assert.equal(postgresPolicy.spec.ingress[0].from[0].podSelector.matchLabels['app.kubernetes.io/name'], name);
       }
     }
     const cm = resources.find(r => r.kind === 'ConfigMap');

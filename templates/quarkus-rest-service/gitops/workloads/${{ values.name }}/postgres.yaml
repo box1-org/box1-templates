@@ -54,6 +54,13 @@ spec:
           envFrom:
             - secretRef:
                 name: ${{ values.name }}-postgres
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/pgsql/data
@@ -78,4 +85,23 @@ spec:
     - name: postgres
       port: 5432
       targetPort: postgres
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${{ values.name }}-postgres
+  namespace: ${{ values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ${{ values.name }}-postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ${{ values.name }}
+      ports:
+        - protocol: TCP
+          port: 5432
 {% endif %}
