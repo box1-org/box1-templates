@@ -501,12 +501,24 @@ class Workflow {
       }
       await this.pullRequest('promotion',updates);
     }
+    await this.requestPromotionSync();
+  }
+  // Requests the rollout of the merged digest instead of relying on when Argo next
+  // notices the commit. verify observes the outcome, and the record stops a retry
+  // from repeating the request.
+  async requestPromotionSync() {
+    if(this.data.promotionSync) return;
+    const revision=this.data.promotionPR.mergeCommit;
+    const requested=await this.requestApplicationSync(this.name,revision,this.name);
+    await this.save('PROMOTION_SYNC_REQUESTED',{promotionSync:{revision,requestedAt:requested===null?null:new Date(requested).toISOString()}});
   }
   async verify() {
     check(this.data?.imageDigest,'Cannot verify deployment without an image digest');
     const image=`image-registry.openshift-image-registry.svc:5000/box1-ci/${this.name}@${this.data.imageDigest}`;
     await this.wait('first deployment and public endpoint',900,async()=>{
       const app=await this.kube.get(APPS+'/'+this.name);const dep=await this.kube.get(`/apis/apps/v1/namespaces/${this.ns}/deployments/${this.name}`);
+      const sync=this.data.promotionSync,operation=app?.status?.operationState;
+      if(sync?.requestedAt&&['Error','Failed'].includes(operation?.phase)&&Date.parse(operation.startedAt)>=Date.parse(sync.requestedAt)-5000)throw new Error(syncDetails(app,this.name,sync.revision));
       if(app?.status?.sync?.status!=='Synced'||app?.status?.health?.status!=='Healthy')return 'Argo CD Synced and Healthy';
       if(dep?.spec?.template?.spec?.containers[0].image!==image||dep.status?.observedGeneration!==dep.metadata.generation||!dep.status?.availableReplicas)return 'digest-pinned Deployment Available';
       try{
