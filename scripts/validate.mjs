@@ -132,3 +132,37 @@ for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quark
   assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
 }
 console.log('PASS rejected unsafe/reserved names');
+
+const repositorySource = path.join(root, 'templates/github-repository');
+const repositoryTemplate = YAML.parse(fs.readFileSync(path.join(repositorySource, 'template.yaml'), 'utf8'));
+const checkRepositoryForm = ajv.compile(repositoryTemplate.spec.parameters[0]);
+assert(YAML.parse(fs.readFileSync(path.join(root, 'catalog-info.yaml'), 'utf8')).spec.targets.includes('./templates/github-repository/template.yaml'));
+assert.equal(repositoryTemplate.spec.parameters[0].properties.visibility.default, 'public');
+assert.deepEqual(repositoryTemplate.spec.steps.map(step => step.action), ['fetch:template', 'publish:github', 'catalog:register']);
+for (const name of ['team-notes', 'box1-example-docs', 'a'.repeat(63)]) {
+  const parameters = { name, description: 'A plain repository', owner: 'user:default/mike4263', visibility: 'public' };
+  assert(checkRepositoryForm(parameters), JSON.stringify(checkRepositoryForm.errors));
+  const target = path.join(root, '.validation/github-repository', name);
+  fs.rmSync(target, { recursive: true, force: true });
+  renderTree(path.join(repositorySource, 'skeleton'), target, parameters);
+  assert.deepEqual(fs.readdirSync(target).sort(), ['README.md', 'catalog-info.yaml']);
+  const entity = YAML.parse(fs.readFileSync(path.join(target, 'catalog-info.yaml'), 'utf8'));
+  assert.equal(entity.metadata.name, name);
+  assert.equal(entity.metadata.annotations['github.com/project-slug'], `box1-org/${name}`);
+  assert.equal(entity.spec.owner, parameters.owner);
+  const context = { parameters, steps: { publish: { output: { repoContentsUrl: `https://github.com/box1-org/${name}/blob/main`, remoteUrl: `https://github.com/box1-org/${name}` } } } };
+  for (const step of repositoryTemplate.spec.steps) {
+    const action = actions.find(a => a.id === step.action);
+    if (actionsFile) assert(action, `Installed action missing: ${step.action}`);
+    if (action?.schema?.input) {
+      const input = JSON.parse(env.renderString(JSON.stringify(step.input), context));
+      const check = ajv.compile(action.schema.input);
+      assert(check(input), `${step.id}: ${JSON.stringify(check.errors)}`);
+    }
+  }
+  console.log(`PASS github-repository ${name}: render, ownership, no build or deployment files`);
+}
+for (const name of ['../escape', 'Uppercase', 'ab', 'a--b', 'a-', 'a'.repeat(64)]) {
+  assert(!checkRepositoryForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'public' }), `Accepted unsafe repository name: ${name}`);
+}
+console.log('PASS github-repository rejected unsafe names');

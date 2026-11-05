@@ -7,3 +7,4 @@ spec:
   type: url
   targets:
     - ./templates/quarkus-rest-service/template.yaml
+    - ./templates/github-repository/template.yaml

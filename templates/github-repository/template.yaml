@@ -1,0 +1,78 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: github-repository
+  title: Create GitHub Repository
+  description: Plain repository for documentation or configuration, with no build step or deployment.
+  tags: [github, repository, documentation]
+  annotations:
+    box1.org/template-version: "1.0.0"
+spec:
+  owner: user:default/mike4263
+  type: repository
+  parameters:
+    - title: Repository details
+      required: [name, description, owner, visibility]
+      properties:
+        name:
+          title: Repository name
+          type: string
+          minLength: 3
+          maxLength: 63
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: Creates box1-org/<name>. The name must not already exist.
+        description:
+          title: Description
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 .,!?()/_-]*$'
+        owner:
+          title: Catalog owner
+          type: string
+          default: user:default/mike4263
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        visibility:
+          title: Repository visibility
+          type: string
+          enum: [private, public]
+          default: public
+  steps:
+    - id: fetch
+      name: Generate repository files
+      action: fetch:template
+      input:
+        url: ./skeleton
+        targetPath: repository
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+    - id: publish
+      name: Create source repository
+      action: publish:github
+      input:
+        repoUrl: github.com?owner=box1-org&repo=${{ parameters.name }}
+        sourcePath: repository
+        description: ${{ parameters.description }}
+        repoVisibility: ${{ parameters.visibility }}
+        defaultBranch: main
+        protectDefaultBranch: false
+        deleteBranchOnMerge: true
+        gitCommitMessage: Create repository from the Box1 template
+    - id: register
+      name: Register repository in the catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+  output:
+    links:
+      - title: Source repository
+        url: https://github.com/box1-org/${{ parameters.name }}
+      - title: Repository in catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

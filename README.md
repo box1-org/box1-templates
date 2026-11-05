@@ -16,6 +16,11 @@ scoped observer RBAC, and an automatically reconciled Argo CD Application.
 The central Tasks remain in `box1-gitops`; generated repositories own only their
 PipelineRun definitions and application code.
 
+The `github-repository` template (**Create → Create GitHub Repository**) creates
+a plain repository under `box1-org` for documentation or configuration, such as
+`box1-docs` or `box1-gitops`. It generates only a README and catalog entry, with
+no build, pipeline, namespace, or deployment. Names that already exist are refused.
+
 ## Ownership and prerequisites
 
 Template owner: `user:default/mike4263`. Developers select an imported catalog
