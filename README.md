@@ -64,9 +64,10 @@ as well as the verified deployment.
 
 The Quarkus template creates or resumes its source repository and then runs the
 stateful development workflow from [plugins/box1-onboarding](plugins/box1-onboarding/README.md).
-It validates and merges the scoped GitOps onboarding PR, observes platform
-readiness, explicitly starts the first CI build, validates and merges the
-immutable development image promotion, and verifies the public deployment.
+It validates and merges the scoped GitOps onboarding PR, requests the platform
+sync, starts the first CI build once its prerequisites exist, confirms platform
+readiness alongside the build, validates and merges the immutable development
+image promotion, requests its Argo sync, and verifies the public deployment.
 No manual merge, arbitrary delay, or additional source push is required.
 
 The task output includes source, catalog, initial pipeline, deployment and Argo
