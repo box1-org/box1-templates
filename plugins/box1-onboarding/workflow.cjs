@@ -97,7 +97,7 @@ class Kube {
 }
 class Workflow {
   constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); }
-  log(phase, state, extra={}) { const fields={onboardingId:this.data?.id||this.executionId,phase,state,...extra}; this.ctx.logger.info(Object.entries(fields).map(([k,v])=>`${k}=${String(v).replace(/\s+/g,'_')}`).join(' ')); }
+  log(phase, state, extra={}) { const fields={onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,phase,state,...extra}; this.ctx.logger.info(Object.entries(fields).map(([k,v])=>`${k}=${String(v).replace(/\s+/g,'_')}`).join(' ')); }
   async github(p, method='GET', body, options={}) {
     const { token } = options.token ? {token:options.token} : await this.credentials.getCredentials({url:'https://github.com/'+ORG});
     const response=await fetch('https://api.github.com'+p, {method, headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},body:body===undefined?undefined:JSON.stringify(body), signal:AbortSignal.timeout(45000)});
@@ -122,15 +122,27 @@ class Workflow {
   async save(phase, extra={}) {
     const previous=this.data?.phase;
     const now=new Date().toISOString();
-    this.data={schemaVersion:2,...this.data,onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,serviceName:this.name,phase,phaseStatus:'succeeded',phaseStartedAt:previous===phase?(this.data?.phaseStartedAt||now):now,lastTransitionAt:previous===phase?(this.data?.lastTransitionAt||now):now,updatedAt:now,...extra};
+    const status=extra.phaseStatus||'succeeded';
+    this.data={schemaVersion:2,...this.data,onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,serviceName:this.name,phase,phaseStatus:status,phaseStartedAt:previous===phase?(this.data?.phaseStartedAt||now):now,lastTransitionAt:previous===phase?(this.data?.lastTransitionAt||now):now,updatedAt:now,...extra};
     if(phase!=='FAILED') {this.data.lastSuccessfulState=phase;delete this.data.error;}
     this.data.history=[...(this.data.history||[]),...(previous===phase?[]:[{phase,at:this.data.updatedAt}])].slice(-40);
     const obj={apiVersion:'v1',kind:'ConfigMap',metadata:{name:this.key,namespace:'rhdh',labels:{'box1.org/onboarding':this.name},...(this.cm?{resourceVersion:this.cm.metadata.resourceVersion}:{})},data:{'status.json':JSON.stringify(this.data)}};
-    this.cm=await this.kube.request(this.cm?'PUT':'POST',this.cm?ROOT+'/configmaps/'+this.key:ROOT+'/configmaps',obj);
+    try {
+      this.cm=await this.kube.request(this.cm?'PUT':'POST',this.cm?ROOT+'/configmaps/'+this.key:ROOT+'/configmaps',obj);
+    } catch(error) {
+      if(error.status===409) {
+        const latest=await this.kube.get(ROOT+'/configmaps/'+this.key);
+        if(latest) { this.cm=latest; try { this.data=JSON.parse(latest.data['status.json']); } catch {} }
+        error.code='ONBOARDING_STATE_CONFLICT';
+      }
+      throw error;
+    }
     if(previous!==phase) this.log(phase,'succeeded',{elapsed: this.data.phaseStartedAt ? Math.round((Date.now()-Date.parse(this.data.phaseStartedAt))/1000)+'s' : '0s'});
   }
   async wait(label, seconds, observe) {
-    const deadline=Date.now()+seconds*1000;let last;const phase=this.data?.phase||'unknown';const started=Date.now();this.log(phase,'waiting',{condition:label,elapsed:'0s'});
+    const deadline=Date.now()+seconds*1000;let last;const phase=this.data?.phase||'unknown';const started=Date.now();
+    if(this.data) await this.save(phase,{phaseStatus:'waiting',waitCondition:label});
+    this.log(phase,'waiting',{condition:label,elapsed:'0s'});
     while(Date.now()<deadline) {
       await this.renew();
       const result=await observe(); if(result===true||result?.done) return result?.value;
@@ -500,7 +512,7 @@ class Workflow {
   }
   async run(operation) {
     try{await this.open();this.log(operation,'running');await this[operation]();}
-    catch(error){if(this.data)try{await this.save('FAILED',{phaseStatus:'failed',error:error.message,lastErrorCode:error.code||'ONBOARDING_FAILED',lastErrorMessage:error.message,failedDuring:this.data.phase,failedAt:new Date().toISOString()});}catch{}throw error;}
+    catch(error){if(this.data)try{const cancelled=this.ctx.signal?.aborted;await this.save(cancelled?'CANCELLED':'FAILED',{phaseStatus:cancelled?'cancelled':'failed',error:error.message,lastErrorCode:error.code|| (cancelled?'ONBOARDING_CANCELLED':'ONBOARDING_FAILED'),lastErrorMessage:error.message,failedDuring:this.data.phase,failedAt:new Date().toISOString()});}catch{}throw error;}
     finally{await this.close();}
   }
 }

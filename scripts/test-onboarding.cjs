@@ -179,3 +179,11 @@ test('new onboarding writes only to development workload repository',async()=>{
  };
  await w.pullRequest('onboarding',files);assert(calls.length>=4);assert.match(w.data.onboardingPR.url,/box1-workloads-dev/);
 });
+test('ConfigMap state conflicts are surfaced without overwriting newer state',async()=>{
+ const latest={metadata:{resourceVersion:'9'},data:{'status.json':JSON.stringify({id,onboardingId:id,phase:'BUILD_RUNNING',phaseStatus:'running'})}};
+ const kube={get:async()=>latest,request:async()=>{const e=new Error('conflict');e.status=409;throw e;}};
+ const w=workflow(kube);w.save=Workflow.prototype.save.bind(w);w.cm={metadata:{resourceVersion:'8'}};await assert.rejects(w.save('PLATFORM_READY'),error=>error.code==='ONBOARDING_STATE_CONFLICT');assert.equal(w.data.phase,'BUILD_RUNNING');assert.equal(w.cm.metadata.resourceVersion,'9');
+});
+test('wait persists an explicit waiting phase status',async()=>{
+ const w=workflow();const saves=[];w.save=async(phase,extra)=>saves.push({phase,...extra});w.renew=async()=>{};await assert.rejects(w.wait('registry_permission',0,async()=>false),/Timed out waiting/);assert.equal(saves[0].phaseStatus,'waiting');assert.equal(saves[0].waitCondition,'registry_permission');
+});
