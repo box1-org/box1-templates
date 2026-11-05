@@ -3,6 +3,18 @@ const test=require('node:test');const assert=require('node:assert/strict');const
 const {DELIVERY_PHASES,Workflow,validateName,validateBundle,filesAt}=require('../plugins/box1-onboarding/workflow.cjs');
 const name='orders-api',id='9ae74f64-b93b-4d70-a6fe-4a223436b6f0',sha='a'.repeat(40),digest='sha256:'+'b'.repeat(64);
 function workflow(kube={}){const outputs={};const w=new Workflow({ctx:{input:{name,sourceRevision:sha},workspacePath:'unused',logger:{info(){}},output:(k,v)=>outputs[k]=v},config:{},credentials:{},kube});w.data={id,name,namespace:name+'-dev',sourceRevision:sha};w.renew=async()=>{};w.save=async(phase,extra={})=>{w.data={...w.data,...extra,phase:phase??w.data.phase};};return w;}
+test('PostgreSQL NetworkPolicy is accepted only when scoped to this service',async()=>{
+ const svc='inventory-service',file=`workloads/${svc}/postgres.yaml`;
+ const base=await filesAt(path.resolve(__dirname,'../.validation/inventory-service/gitops'));
+ const policy=(n=svc,extra='')=>`\n---\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: ${svc}-postgres\n  namespace: ${svc}-dev\nspec:\n  podSelector:\n    matchLabels:\n      app.kubernetes.io/name: ${svc}-postgres\n  policyTypes: [Ingress]\n  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              app.kubernetes.io/name: ${n}\n${extra}`;
+ const stripped=base[file].content.split(/^---$/m).filter(d=>!d.includes('kind: NetworkPolicy')).join('---');
+ const withPolicy=text=>({...base,[file]:{...base[file],content:stripped+text}});
+ validateBundle(withPolicy(policy()),svc);
+ assert.throws(()=>validateBundle(withPolicy(policy('other-service')),svc),/Invalid PostgreSQL NetworkPolicy/);
+ assert.throws(()=>validateBundle(withPolicy(policy(svc,'          namespaceSelector: {}\n')),svc),/Invalid PostgreSQL NetworkPolicy/);
+ assert.throws(()=>validateBundle(withPolicy(policy().replace(`${svc}-dev`,'other-dev')),svc),/Invalid PostgreSQL NetworkPolicy/);
+ assert.throws(()=>validateBundle(withPolicy(policy().replace(`name: ${svc}-postgres\n  namespace`,'name: other\n  namespace')),svc),/Unexpected generated resource/);
+});
 test('development-only merge policy rejects namespace, RBAC and baseline changes',async()=>{
  const files=await filesAt(path.resolve(__dirname,'../.validation/orders-api/gitops'));validateBundle(files,name);
  for(const invalid of ['orders-service','quarkus-reference','default','prod/escape','box1-other','Uppercase'])assert.throws(()=>validateName(invalid));
