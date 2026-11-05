@@ -76,6 +76,9 @@ function validateBundle(files, name) {
       check(m.namespace === ns && obj.spec.resources.requests.storage === '5Gi' && same(obj.spec.accessModes,['ReadWriteOnce']), 'Invalid PostgreSQL PVC');
     } else if (obj.kind === 'Secret' && m.name === name + '-postgres') {
       check(m.namespace === ns && obj.type === 'Opaque' && obj.stringData?.POSTGRESQL_PASSWORD === 'replace-before-sync', 'Invalid PostgreSQL Secret placeholder');
+    } else if (obj.kind === 'NetworkPolicy' && m.name === name + '-postgres') {
+      const ingress = obj.spec?.ingress ?? [];
+      check(hasPostgres && m.namespace === ns && obj.spec.podSelector?.matchLabels?.['app.kubernetes.io/name'] === name + '-postgres' && same(obj.spec.policyTypes,['Ingress']) && ingress.length === 1 && ingress[0].from?.length === 1 && ingress[0].from[0].podSelector?.matchLabels?.['app.kubernetes.io/name'] === name && !ingress[0].from[0].namespaceSelector && !ingress[0].from[0].ipBlock, 'Invalid PostgreSQL NetworkPolicy');
     } else if (obj.kind === 'KafkaTopic') {
       throw new Error('KafkaTopic resources are not allowed in service onboarding');
     } else {
