@@ -43,7 +43,7 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
   renderTree(path.join(source, 'gitops'), path.join(target, 'gitops'), values);
   const pom = fs.readFileSync(path.join(target, 'application/pom.xml'), 'utf8');
   assert.equal(pom.includes('quarkus-jdbc-postgresql'), Boolean(parameters.postgres));
-  assert.equal(pom.includes('quarkus-smallrye-reactive-messaging-kafka'), Boolean(parameters.kafka));
+  assert.equal(pom.includes('quarkus-messaging-kafka'), Boolean(parameters.kafka));
   for (const folder of [path.join(target, `gitops/workloads/${name}`)]) {
     const resources = YAML.parseAllDocuments(execFileSync('kubectl', ['kustomize', folder], { encoding: 'utf8' })).map(d => d.toJSON());
     const deployment = resources.find(r => r.kind === 'Deployment');
