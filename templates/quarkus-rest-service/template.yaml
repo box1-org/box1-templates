@@ -41,6 +41,14 @@ spec:
           type: string
           enum: [private, public]
           default: public
+        techdocsOverview:
+          title: TechDocs overview
+          type: string
+          maxLength: 2000
+          description: Optional Markdown paragraph for the Overview section of the service's TechDocs home page.
+          ui:widget: textarea
+          ui:options:
+            rows: 5
         postgres:
           title: Include PostgreSQL support
           type: boolean
@@ -62,6 +70,7 @@ spec:
           name: ${{ parameters.name }}
           namespace: ${{ parameters.name }}-dev
           description: ${{ parameters.description }}
+          techdocsOverview: ${{ parameters.techdocsOverview }}
           owner: ${{ parameters.owner }}
           postgres: ${{ parameters.postgres }}
           kafka: ${{ parameters.kafka }}
@@ -146,9 +155,3 @@ spec:
           The first image is built and deployed. No additional source push is needed.
           Subsequent main merges use the normal CI and development promotion pipeline.
           Onboarding status record: ${{ steps.verify.output.statusRecord }}.
-      - title: TechDocs basics
-        content: |
-          TechDocs publishes this service's documentation from its source repository.
-          Edit the Markdown in `docs/`, list new pages in `mkdocs.yml`, and merge to `main`.
-          Developer Hub builds the site and shows it on the service's **Docs** tab; the first
-          visit can take a moment while it builds.
