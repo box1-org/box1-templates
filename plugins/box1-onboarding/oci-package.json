@@ -1,0 +1,26 @@
+{
+  "registry": "registry.apps.ocp.box1.org",
+  "repository": "box1-plugins/box1-onboarding-plugin",
+  "pluginPath": "box1-scaffolder-onboarding",
+  "packageName": "box1-scaffolder-onboarding-dynamic",
+  "pluginId": "scaffolder",
+  "moduleId": "box1-development-onboarding",
+  "sourceRepository": "https://github.com/box1-org/box1-templates",
+  "compatibility": {
+    "rhdh": "1.9.7",
+    "backstage": "1.45.3",
+    "rhdhCli": "1.9.2"
+  },
+  "actions": [
+    "box1:repository:ensure",
+    "box1:development:provision",
+    "box1:development:platform",
+    "box1:development:build",
+    "box1:development:promote",
+    "box1:development:verify",
+    "box1:development:onboard",
+    "box1:catalog:submit",
+    "box1:catalog:verify",
+    "box1:catalog:ensure"
+  ]
+}
