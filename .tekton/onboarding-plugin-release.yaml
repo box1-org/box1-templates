@@ -1,0 +1,144 @@
+# Approved release: a maintainer tags a main commit onboarding-plugin-v<package version>.
+# Publishes the image and proposes a GitOps PR. Argo CD remains the only deployer.
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: box1-onboarding-plugin-release-
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/on-target-branch: "[refs/tags/onboarding-plugin-v*]"
+    pipelinesascode.tekton.dev/max-keep-runs: "5"
+spec:
+  taskRunTemplate:
+    serviceAccountName: ci-plugin-release
+  timeouts:
+    pipeline: 20m
+  pipelineSpec:
+    tasks:
+      - name: onboarding-plugin
+        # PAC can briefly create the run before its event credential Secret.
+        retries: 1
+        taskSpec:
+          volumes:
+            - name: workspace
+              emptyDir: {}
+            - name: containers
+              emptyDir: {}
+          stepTemplate:
+            image: registry.access.redhat.com/ubi9/buildah@sha256:12ab6d225aef49ceed4c7b39e7ab207c4b7f4a67b7dba04a61efbac92c01b8b8
+            workingDir: /workspace/source
+            securityContext:
+              runAsUser: 0
+              capabilities:
+                add: [SETFCAP]
+            computeResources:
+              requests: {cpu: 500m, memory: 1Gi}
+              limits: {cpu: "2", memory: 3Gi}
+            env:
+              - name: HOME
+                value: /workspace/home
+              - name: REVISION
+                value: "{{revision}}"
+              - name: PATH
+                value: /workspace/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              - name: BUILDAH_ISOLATION
+                value: chroot
+              - name: STORAGE_DRIVER
+                value: vfs
+              - name: BUILDAH_FORMAT
+                value: oci
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+              - name: containers
+                mountPath: /var/lib/containers
+          steps:
+            - name: fetch
+              workingDir: /workspace
+              env:
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: "{{git_auth_secret}}"
+                      key: git-provider-token
+              script: |
+                #!/bin/sh
+                set -eu
+                echo "$REVISION" | grep -Eq '^[a-f0-9]{40}$'
+                mkdir -p source home node
+                curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/box1-org/box1-templates/tarball/$REVISION" \
+                  | tar -xz --strip-components=1 -C source
+                # Platform-owned checksum, independent of the source under test.
+                curl -fsSL -o node.tar.gz https://nodejs.org/dist/v22.21.1/node-v22.21.1-linux-x64.tar.gz
+                echo '219a152ea859861d75adea578bdec3dce8143853c13c5187f40c40e77b0143b2  node.tar.gz' | sha256sum -c -
+                tar -xzf node.tar.gz --strip-components=1 -C node
+                rm node.tar.gz
+                printf 'Fetched box1-templates at %s\n' "$REVISION"
+            - name: test
+              script: |
+                #!/bin/sh
+                set -eu
+                npm ci --no-audit --no-fund
+                npm ci --prefix tools/rhdh-cli --ignore-scripts --no-audit --no-fund
+                npm run validate
+                npm run test:onboarding
+                npm run test:onboarding-oci
+            - name: approve
+              env:
+                - name: RELEASE_REF
+                  value: "{{target_branch}}"
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: "{{git_auth_secret}}"
+                      key: git-provider-token
+              script: |
+                #!/bin/sh
+                set -eu
+                version=$(node -p "require('./plugins/box1-onboarding/package.json').version")
+                test "${RELEASE_REF#refs/tags/}" = "onboarding-plugin-v$version"
+                status=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/box1-org/box1-templates/compare/main...$REVISION" \
+                  | node -p "JSON.parse(require('fs').readFileSync(0)).status")
+                case "$status" in
+                  identical|behind) ;;
+                  *) echo "$REVISION is not on main ($status)"; exit 1 ;;
+                esac
+                printf 'Release %s approved for %s\n' "$version" "$REVISION"
+            - name: publish
+              env:
+                - name: BUILD_URL
+                  value: https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/$(context.pipelineRun.name)
+              script: |
+                #!/bin/sh
+                set -eu
+                version=$(node -p "require('./plugins/box1-onboarding/package.json').version")
+                registry=$(node -p "require('./plugins/box1-onboarding/oci-package.json').registry")
+                repository=$(node -p "require('./plugins/box1-onboarding/oci-package.json').repository")
+                # A unique tag per build keeps every release digest out of image pruning.
+                image="$registry/$repository:$version-$(printf %s "$REVISION" | cut -c1-12)"
+                npm run package:onboarding-oci -- --tag "$image" --container-tool buildah
+                buildah push "$image" oci:/workspace/layout
+                node scripts/inspect-onboarding-oci.mjs --layout /workspace/layout --revision "$REVISION"
+                token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                buildah push --creds "serviceaccount:$token" --digestfile /workspace/digest "$image"
+                digest=$(cat /workspace/digest)
+                echo "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+                # Read the pushed digest back from the registry and verify it is this build.
+                REGISTRY_TOKEN="$token" node scripts/inspect-onboarding-oci.mjs --digest "$digest" --revision "$REVISION"
+                printf 'Published %s@%s\n' "$registry/$repository" "$digest"
+            - name: propose-gitops-pr
+              env:
+                - name: BUILD_URL
+                  value: https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/$(context.pipelineRun.name)
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: "{{git_auth_secret}}"
+                      key: git-provider-token
+              script: |
+                #!/bin/sh
+                set -eu
+                DIGEST=$(cat /workspace/digest) VERSION=$(node -p "require('./plugins/box1-onboarding/package.json').version") \
+                  node scripts/open-onboarding-gitops-pr.mjs

@@ -1,0 +1,9 @@
+{
+  "name": "box1-rhdh-cli-pin",
+  "private": true,
+  "description": "Exact packaging tool versions for the RHDH 1.9.7 onboarding plugin. Change only with the deployed RHDH version.",
+  "dependencies": {
+    "@red-hat-developer-hub/cli": "1.9.2",
+    "yarn": "1.22.22"
+  }
+}
