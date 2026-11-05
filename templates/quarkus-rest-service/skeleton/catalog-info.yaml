@@ -6,12 +6,17 @@ metadata:
   annotations:
     github.com/project-slug: box1-org/${{ values.name }}
     backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/source-location: url:https://github.com/box1-org/${{ values.name }}/
     janus-idp.io/tekton: ${{ values.name }}
     argocd/instance-name: openshift-gitops
     argocd/app-selector: backstage.io/kubernetes-id=${{ values.name }}
     box1.org/template-version: "1.1.0"
   tags: [java, quarkus, maven, tekton, gitops]
   links:
+    - url: https://github.com/box1-org/${{ values.name }}
+      title: Source Repository
+      icon: github
     - url: https://${{ values.namespace }}.apps.ocp.box1.org/q/swagger-ui/
       title: Swagger UI — test endpoints
       icon: code
@@ -22,10 +27,17 @@ metadata:
       title: Application Route (after first release)
     - url: https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${{ values.name }}
       title: Desired deployment configuration
+    - url: https://devspaces.apps.ocp.box1.org/#https://github.com/box1-org/${{ values.name }}
+      title: Open in Dev Spaces
+      icon: code
+    # Add actual service-specific observability URLs
+    # when dashboards and log views exist.
 spec:
   type: service
   lifecycle: experimental
   owner: ${{ values.owner | dump }}
+  # Add when the corresponding System entity exists:
+  # system: box1-demo
   providesApis:
     - ${{ values.name }}-api
 ---

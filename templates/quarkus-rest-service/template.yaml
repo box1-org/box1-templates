@@ -40,7 +40,15 @@ spec:
           title: Repository visibility
           type: string
           enum: [private, public]
-          default: private
+          default: public
+        techdocsOverview:
+          title: TechDocs overview
+          type: string
+          maxLength: 2000
+          description: Optional Markdown paragraph for the Overview section of the service's TechDocs home page.
+          ui:widget: textarea
+          ui:options:
+            rows: 5
         postgres:
           title: Include PostgreSQL support
           type: boolean
@@ -62,6 +70,7 @@ spec:
           name: ${{ parameters.name }}
           namespace: ${{ parameters.name }}-dev
           description: ${{ parameters.description }}
+          techdocsOverview: ${{ parameters.techdocsOverview }}
           owner: ${{ parameters.owner }}
           postgres: ${{ parameters.postgres }}
           kafka: ${{ parameters.kafka }}

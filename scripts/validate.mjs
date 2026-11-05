@@ -35,7 +35,8 @@ function renderTree(from, to, values) {
   }
 }
 
-for (const [name, integrations] of [['orders-api', { postgres: false, kafka: false }], ['inventory-service', { postgres: true, kafka: false }], ['quarkus-golden-path-smoke', { postgres: false, kafka: true }], ['a'.repeat(35), { postgres: true, kafka: true }]]) {
+const techdocsOverview = 'First line with "quotes" & <b>markup</b>: `code`.\n\nSecond paragraph.';
+for (const [name, integrations] of [['orders-api', { postgres: false, kafka: false, techdocsOverview }], ['inventory-service', { postgres: true, kafka: false }], ['quarkus-golden-path-smoke', { postgres: false, kafka: true }], ['a'.repeat(35), { postgres: true, kafka: true }]]) {
   const parameters = { name, description: 'A Quarkus REST service on OpenShift', owner: 'user:default/mike4263', visibility: 'private', ...integrations };
   assert(checkForm(parameters), JSON.stringify(checkForm.errors));
   const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'a'.repeat(40) };
@@ -101,6 +102,14 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
   assert.equal(api.spec.owner, parameters.owner);
   assert.equal(api.spec.definition.$text, `https://${name}-dev.apps.ocp.box1.org/q/openapi`);
   assert(catalog.metadata.links.some(l => l.url === `https://${name}-dev.apps.ocp.box1.org/q/swagger-ui/`));
+  assert(catalog.metadata.links.some(l => l.url === `https://devspaces.apps.ocp.box1.org/#https://github.com/box1-org/${name}`));
+  assert.equal(catalog.metadata.annotations['backstage.io/techdocs-ref'], 'dir:.');
+  assert.equal(catalog.metadata.annotations['backstage.io/source-location'], `url:https://github.com/box1-org/${name}/`);
+  assert(catalog.metadata.links.some(l => l.url === `https://github.com/box1-org/${name}` && l.title === 'Source Repository' && l.icon === 'github'));
+  assert.equal(YAML.parse(fs.readFileSync(path.join(app, 'mkdocs.yml'), 'utf8')).site_name, name);
+  const docsHome = fs.readFileSync(path.join(app, 'docs/index.md'), 'utf8');
+  assert.equal(docsHome.includes('## Overview'), Boolean(parameters.techdocsOverview));
+  if (parameters.techdocsOverview) assert(docsHome.includes(parameters.techdocsOverview), 'TechDocs overview was not rendered verbatim');
   assert.equal(catalog.spec.owner, parameters.owner);
   assert.equal(catalog.metadata.name, name);
   assert.equal(catalog.metadata.annotations['backstage.io/kubernetes-id'], name);
@@ -132,3 +141,4 @@ for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quark
   assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
 }
 console.log('PASS rejected unsafe/reserved names');
+assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:default/mike4263', visibility: 'public', techdocsOverview: 'a'.repeat(2001) }), 'Accepted an oversized TechDocs overview');

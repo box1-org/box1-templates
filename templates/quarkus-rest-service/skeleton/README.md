@@ -79,3 +79,8 @@ The production contract targets the public HTTPS Route; override `PUBLIC_API_URL
 when deploying behind another public address. CORS allows the Developer Hub
 origin to make tester requests without cookies. API authentication, if added,
 should be declared in the OpenAPI contract and supplied through **Authorize**.
+
+## Documentation
+
+Developer Hub publishes `docs/` on the service's **Docs** tab using TechDocs.
+List new pages in `mkdocs.yml`.
