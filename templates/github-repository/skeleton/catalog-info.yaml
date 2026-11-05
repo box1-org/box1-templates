@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description | dump }}
+  annotations:
+    github.com/project-slug: box1-org/${{ values.name }}
+    box1.org/template-version: "1.0.0"
+  tags: [repository]
+spec:
+  type: repository
+  lifecycle: experimental
+  owner: ${{ values.owner | dump }}
