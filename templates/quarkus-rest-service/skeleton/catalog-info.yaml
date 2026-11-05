@@ -23,7 +23,7 @@ metadata:
       title: Application Route (after first release)
     - url: https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${{ values.name }}
       title: Desired deployment configuration
-    - url: https://devspaces.apps.ocp.box1.org/dashboard/#/create-workspace
+    - url: https://devspaces.apps.ocp.box1.org/#https://github.com/box1-org/${{ values.name }}
       title: Open in Dev Spaces
       icon: code
 spec:
