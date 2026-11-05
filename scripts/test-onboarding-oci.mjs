@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { inspect, layoutSource, registrySource } from './inspect-onboarding-oci.mjs';
+import { planRuntimeUpdate, pullRequestBody } from './open-onboarding-gitops-pr.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const pluginDir = path.join(root, 'plugins/box1-onboarding');
@@ -134,4 +135,56 @@ test('the pinned CLI matches the deployed RHDH compatibility target', () => {
   assert.equal(version.split('.').slice(0, 2).join('.'), oci.compatibility.rhdh.split('.').slice(0, 2).join('.'));
   assert.equal(pkg.backstage['supported-versions'], oci.compatibility.backstage);
   assert.equal(pkg.private, true);
+});
+
+const digestA = `sha256:${'a'.repeat(64)}`;
+const digestB = `sha256:${'b'.repeat(64)}`;
+const repository = `${oci.registry}/${oci.repository}`;
+const runtimeFiles = (reference = `oci://${repository}@${digestA}!${oci.pluginPath}`, annotationDigest = digestA) => ({
+  dynamicPlugins: `plugins:\n      - package: ${reference}\n        disabled: false\n      - package: ./other\n`,
+  backstage: `annotations:\n              box1.org/onboarding-plugin-digest: ${annotationDigest}\n`,
+});
+
+test('a release updates only the digest reference and rollout annotation', () => {
+  const plan = planRuntimeUpdate(oci, runtimeFiles(), digestB);
+  assert.equal(plan.rollbackDigest, digestA);
+  assert.equal(plan.unchanged, false);
+  assert.equal(plan.dynamicPlugins, runtimeFiles(`oci://${repository}@${digestB}!${oci.pluginPath}`).dynamicPlugins);
+  assert.equal(plan.backstage, runtimeFiles(undefined, digestB).backstage);
+  assert.equal(planRuntimeUpdate(oci, runtimeFiles(), digestA).unchanged, true);
+});
+
+test('a release before the cutover opens no PR', () => {
+  assert.equal(planRuntimeUpdate(oci, { dynamicPlugins: '- package: ./box1-scaffolder-onboarding-dynamic\n', backstage: '' }, digestB), null);
+});
+
+for (const [name, files, digest, expected] of [
+  ['a malformed release digest', runtimeFiles(), 'sha256:abc', /Malformed digest/],
+  ['a mutable tag in the current configuration', runtimeFiles(`oci://${repository}:1.1.0!${oci.pluginPath}`), digestB, /not digest-pinned/],
+  ['a wrong plugin path', runtimeFiles(`oci://${repository}@${digestA}!elsewhere`), digestB, /plugin path/],
+  ['duplicate plugin definitions', (() => {
+    const files = runtimeFiles();
+    files.dynamicPlugins += `      - package: oci://${repository}@${digestB}!${oci.pluginPath}\n`;
+    return files;
+  })(), digestB, /More than one/],
+  ['a stale rollout annotation', runtimeFiles(undefined, digestB), digestB, /disagree/],
+  ['a missing rollout annotation', { ...runtimeFiles(), backstage: '' }, digestB, /one rollout digest annotation/],
+]) {
+  test(`a release rejects ${name}`, () => assert.throws(() => planRuntimeUpdate(oci, files, digest), expected));
+}
+
+test('the GitOps PR records everything needed to review and roll back', () => {
+  const body = pullRequestBody(oci, { digest: digestB, version: '1.2.0', revision, buildUrl: 'https://ci.example/run' }, digestA);
+  for (const value of ['1.2.0', revision, repository, digestB, oci.pluginPath, 'RHDH 1.9.7', 'Backstage 1.45.3', digestA, 'https://ci.example/run']) {
+    assert(body.includes(value), `Missing ${value}`);
+  }
+});
+
+test('nothing in the release path deploys or publishes to npm', () => {
+  const pipelines = fs.readdirSync(path.join(root, '.tekton')).map(file => fs.readFileSync(path.join(root, '.tekton', file), 'utf8'));
+  assert(pipelines.length >= 2);
+  for (const text of pipelines) {
+    assert.doesNotMatch(text, /\b(oc|kubectl)\s+(apply|create|patch|replace|rollout|delete)\b/);
+    assert.doesNotMatch(text, /\b(npm|yarn)\s+publish\b/);
+  }
 });
