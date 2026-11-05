@@ -104,6 +104,8 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
   assert(catalog.metadata.links.some(l => l.url === `https://${name}-dev.apps.ocp.box1.org/q/swagger-ui/`));
   assert(catalog.metadata.links.some(l => l.url === `https://devspaces.apps.ocp.box1.org/#https://github.com/box1-org/${name}`));
   assert.equal(catalog.metadata.annotations['backstage.io/techdocs-ref'], 'dir:.');
+  assert.equal(catalog.metadata.annotations['backstage.io/source-location'], `url:https://github.com/box1-org/${name}/`);
+  assert(catalog.metadata.links.some(l => l.url === `https://github.com/box1-org/${name}` && l.title === 'Source Repository' && l.icon === 'github'));
   assert.equal(YAML.parse(fs.readFileSync(path.join(app, 'mkdocs.yml'), 'utf8')).site_name, name);
   const docsHome = fs.readFileSync(path.join(app, 'docs/index.md'), 'utf8');
   assert.equal(docsHome.includes('## Overview'), Boolean(parameters.techdocsOverview));
