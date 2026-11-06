@@ -31,6 +31,12 @@ spec:
     - name: security-gates
       type: string
       default: disabled
+    results:
+    # Read by the OpenShift Pipelines console Vulnerabilities column. Emitted
+    # only when box1-security-gates produced a scan summary; otherwise "-".
+    - name: SCAN_OUTPUT
+      description: RHACS vulnerability counts for the released image digest.
+      value: $(tasks.security.results.SCAN_OUTPUT)
     tasks:
     - name: build
       taskRef:
