@@ -1,0 +1,27 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description | dump }}
+  annotations:
+    github.com/project-slug: box1-org/${{ values.name }}
+    backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/source-location: url:https://github.com/box1-org/${{ values.name }}/
+    janus-idp.io/tekton: ${{ values.name }}
+    argocd/instance-name: openshift-gitops
+    argocd/app-selector: backstage.io/kubernetes-id=${{ values.name }}
+    box1.org/template-version: "1.0.0"
+  tags: [rhel, bootc, image-mode, kubevirt, tekton, gitops]
+  links:
+    - url: https://github.com/box1-org/${{ values.name }}
+      title: Source Repository
+      icon: github
+    - url: https://console-openshift-console.apps.ocp.box1.org/k8s/ns/${{ values.namespace }}/kubevirt.io~v1~VirtualMachine/${{ values.name }}
+      title: Virtual machine (OpenShift console)
+    - url: https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${{ values.name }}
+      title: Desired VM configuration
+spec:
+  type: vm
+  lifecycle: experimental
+  owner: ${{ values.owner | dump }}

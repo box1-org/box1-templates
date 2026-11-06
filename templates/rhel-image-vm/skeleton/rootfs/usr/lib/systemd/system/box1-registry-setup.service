@@ -1,0 +1,14 @@
+[Unit]
+Description=box1 registry trust and pull credential for bootc updates
+DefaultDependencies=no
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+Before=bootc-fetch-apply-updates.service multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/box1/registry-setup
+
+[Install]
+WantedBy=multi-user.target

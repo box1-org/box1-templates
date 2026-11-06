@@ -1,0 +1,9 @@
+# Default boot target for ${{ values.name }}. It keeps the normal multi-user system
+# (networking, sshd, getty, qemu-guest-agent) and adds this appliance's services.
+# Add your own units with WantedBy=${{ values.name }}.target, or list them in Wants=.
+[Unit]
+Description=${{ values.name }} appliance
+Requires=multi-user.target
+After=multi-user.target
+Wants=${{ values.name }}-heartbeat.service box1-registry-setup.service
+AllowIsolate=yes

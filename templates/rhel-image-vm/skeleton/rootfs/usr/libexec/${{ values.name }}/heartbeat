@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+"""Log the image revision once at start and then every 10 minutes."""
+import platform
+import time
+
+
+def revision():
+    try:
+        with open("/usr/lib/box1-image-release") as f:
+            return " ".join(f.read().split())
+    except OSError:
+        return "unknown"
+
+
+while True:
+    print(f"${{ values.name }} alive on {platform.machine()} {revision()}", flush=True)
+    time.sleep(600)

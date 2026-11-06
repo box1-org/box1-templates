@@ -1,0 +1,43 @@
+# ${{ values.name }}: RHEL 10 image mode (bootc) OS image, from the Box1 golden path
+# (box1-org/box1-templates, templates/rhel-image-vm).
+# The base is pinned by its multi-arch index digest, so the same file builds arm64
+# (local Mac, local/) and amd64 (OpenShift) images. Refresh with:
+#   skopeo inspect --raw docker://registry.redhat.io/rhel10/rhel-bootc:10.2 | sha256sum
+FROM registry.redhat.io/rhel10/rhel-bootc:10.2@sha256:80485ddb9025df594891c36e23f865c63910739c10d37f41ae7247b0c64c2884
+
+ARG SOURCE_REVISION=unknown
+
+# Packages come from the RHEL CDN with the cluster's Simple Content Access
+# entitlement, supplied only at build time as secrets (never stored in a layer):
+#   --secret id=entitlement-cert,src=.../entitlement.pem
+#   --secret id=entitlement-key,src=.../entitlement-key.pem
+# build/repos/rhel10-cdn.repo holds the repository definitions (no credentials).
+# qemu-guest-agent is required: KubeVirt delivers admin SSH keys through it.
+RUN --mount=type=secret,id=entitlement-cert,target=/run/secrets/entitlement/entitlement.pem,required=true \
+    --mount=type=secret,id=entitlement-key,target=/run/secrets/entitlement/entitlement-key.pem,required=true \
+    --mount=type=bind,source=build/repos,target=/run/box1-repos \
+    dnf -y --disableplugin=subscription-manager,product-id --setopt=reposdir=/run/box1-repos \
+        --setopt=install_weak_deps=False install \
+        qemu-guest-agent ${{ values.extraPackages }} \
+ && dnf clean all \
+ && rm -rf /var/cache/dnf /var/cache/ldconfig /var/lib/dnf /var/lib/rhsm /var/log/dnf* /var/log/hawkey.log /var/log/rhsm /var/log/qemu-ga
+
+COPY rootfs/ /
+
+# virt_qemu_ga_manage_ssh lets qemu-guest-agent write ~/.ssh/authorized_keys, which
+# KubeVirt accessCredentials needs; it is off by default in RHEL.
+RUN rm -rf /run/secrets/entitlement /run/box1-repos /run/rhsm \
+ && printf 'NAME=%s\nREVISION=%s\n' "${{ values.name }}" "${SOURCE_REVISION}" > /usr/lib/box1-image-release \
+ && chmod 0755 /usr/libexec/${{ values.name }}/heartbeat /usr/libexec/box1/registry-setup \
+ && chmod 0440 /etc/sudoers.d/90-box1-wheel && visudo -cf /etc/sudoers.d/90-box1-wheel \
+ && setsebool -P virt_qemu_ga_manage_ssh on \
+ && systemctl set-default ${{ values.name }}.target \
+ && systemctl enable box1-registry-setup.service \
+ && systemctl disable bootc-fetch-apply-updates.timer \
+ && rpm -q qemu-guest-agent \
+ && bootc container lint
+
+LABEL org.opencontainers.image.source="https://github.com/box1-org/${{ values.name }}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.title="${{ values.name }}" \
+      containers.bootc="1"

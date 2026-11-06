@@ -1,0 +1,96 @@
+---
+apiVersion: pipelinesascode.tekton.dev/v1alpha1
+kind: Repository
+metadata:
+  name: "${{ values.name }}"
+  namespace: box1-ci
+spec:
+  url: https://github.com/box1-org/${{ values.name }}
+  concurrency_limit: 1
+  settings:
+    pipelinerun_provenance: default_branch
+    github_app_token_scope_repos:
+    - box1-org/box1-workloads-dev
+---
+# The VM namespace pulls its disk (DataVolume, pullMethod: node) and, in the guest,
+# OS updates (updater token) from box1-ci.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "${{ values.name }}-image-puller"
+  namespace: box1-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:image-puller
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: "system:serviceaccounts:${{ values.namespace }}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "${{ values.name }}-release-observer"
+  namespace: "${{ values.namespace }}"
+rules:
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  - virtualmachineinstances
+  resourceNames:
+  - "${{ values.name }}"
+  verbs:
+  - get
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - datavolumes
+  resourceNames:
+  - "${{ values.name }}-root"
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "${{ values.name }}-release-observer"
+  namespace: "${{ values.namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "${{ values.name }}-release-observer"
+subjects:
+- kind: ServiceAccount
+  name: ci-observe
+  namespace: box1-ci
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "${{ values.name }}-release-observer"
+  namespace: openshift-gitops
+rules:
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  resourceNames:
+  - "${{ values.name }}"
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "${{ values.name }}-release-observer"
+  namespace: openshift-gitops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "${{ values.name }}-release-observer"
+subjects:
+- kind: ServiceAccount
+  name: ci-observe
+  namespace: box1-ci

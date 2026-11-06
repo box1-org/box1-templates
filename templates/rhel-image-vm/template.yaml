@@ -1,0 +1,176 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: rhel-image-vm
+  title: Create RHEL 10 Image Mode VM
+  description: RHEL 10 image mode (bootc) virtual machine on OpenShift Virtualization, with a Tekton OS image build, GitOps-promoted updates and a verified first boot.
+  tags: [rhel, bootc, image-mode, kubevirt, virtualization, tekton, golden-path]
+  annotations:
+    box1.org/template-version: "1.0.0"
+spec:
+  owner: user:default/mike4263
+  type: vm
+  parameters:
+    - title: Virtual machine details
+      required: [name, description, owner, visibility, adminSshPublicKey]
+      properties:
+        name:
+          title: VM and repository name
+          type: string
+          minLength: 3
+          maxLength: 35
+          pattern: '^(?!quarkus-reference$)(?!orders-service$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: Creates a repository, OS image and VM with this name; the development namespace is <name>-dev.
+        description:
+          title: Description
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 .,!?()/_-]*$'
+          default: A RHEL 10 image mode virtual machine
+        owner:
+          title: Catalog owner
+          type: string
+          default: user:default/mike4263
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        visibility:
+          title: Repository visibility
+          type: string
+          enum: [private, public]
+          default: public
+        adminSshPublicKey:
+          title: Administrator SSH public key
+          type: string
+          maxLength: 800
+          pattern: '^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa) [A-Za-z0-9+/=]+( [A-Za-z0-9@._-]{1,64})?$'
+          description: Public key for the cloud-user account (sudo). Delivered at runtime by the guest agent; change it later in the GitOps Secret.
+        cpuCores:
+          title: vCPU cores
+          type: integer
+          enum: [1, 2, 4]
+          default: 2
+        memory:
+          title: Memory
+          type: string
+          enum: [2Gi, 4Gi, 8Gi]
+          default: 4Gi
+        rootDiskSize:
+          title: Root disk size
+          type: string
+          enum: [12Gi, 20Gi, 40Gi]
+          default: 12Gi
+          description: The OS needs about 11Gi. lvms-vg1 capacity is limited; check free space before choosing more.
+        extraPackages:
+          title: Additional RHEL packages
+          type: string
+          maxLength: 300
+          pattern: '^([a-z0-9][a-z0-9+._-]*( [a-z0-9][a-z0-9+._-]*)*)?$'
+          default: ''
+          description: Optional space-separated RHEL 10 BaseOS/AppStream package names, installed in the OS image.
+  steps:
+    - id: fetchApplication
+      name: Generate OS image definition and pipelines
+      action: fetch:template
+      input:
+        url: ./skeleton
+        targetPath: application
+        values:
+          name: ${{ parameters.name }}
+          namespace: ${{ parameters.name }}-dev
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          extraPackages: ${{ parameters.extraPackages }}
+    - id: publish
+      name: Create or resume source repository
+      action: box1:repository:ensure
+      input:
+        name: ${{ parameters.name }}
+        description: ${{ parameters.description }}
+        owner: ${{ parameters.owner }}
+        visibility: ${{ parameters.visibility }}
+        profile: virtual-machine
+    - id: fetchGitops
+      name: Generate GitOps onboarding configuration
+      action: fetch:template
+      input:
+        url: ./gitops
+        targetPath: gitops
+        values:
+          name: ${{ parameters.name }}
+          namespace: ${{ parameters.name }}-dev
+          sourceRevision: ${{ steps.publish.output.commitHash }}
+          adminSshPublicKey: ${{ parameters.adminSshPublicKey }}
+          cpuCores: ${{ parameters.cpuCores }}
+          memory: ${{ parameters.memory }}
+          rootDiskSize: ${{ parameters.rootDiskSize }}
+    - id: catalogSubmit
+      name: Submit VM to the catalog
+      action: box1:catalog:submit
+      input:
+        name: ${{ parameters.name }}
+    - id: provision
+      name: Provision and merge GitOps onboarding
+      action: box1:development:provision
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: virtual-machine
+    - id: platform
+      name: Request platform sync and wait for build prerequisites
+      action: box1:development:platform
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: virtual-machine
+    - id: build
+      name: Build the OS image and VM disk while platform readiness completes
+      action: box1:development:build
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: virtual-machine
+    - id: promote
+      name: Promote the first OS image and start the VM through GitOps
+      action: box1:development:promote
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: virtual-machine
+    - id: verify
+      name: Verify the VM booted with its guest agent connected
+      action: box1:development:verify
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: virtual-machine
+    - id: catalogVerify
+      name: Verify catalog processing
+      action: box1:catalog:verify
+      input:
+        name: ${{ parameters.name }}
+  output:
+    links:
+      - title: Source repository
+        url: ${{ steps.verify.output.sourceUrl }}
+      - title: VM in catalog
+        icon: catalog
+        entityRef: component:default/${{ parameters.name }}
+      - title: Initial OS image and disk build
+        url: ${{ steps.verify.output.pipelineUrl }}
+      - title: Virtual machine (OpenShift console)
+        url: ${{ steps.verify.output.deploymentUrl }}
+      - title: Argo CD Application
+        url: ${{ steps.verify.output.argoUrl }}
+      - title: Validated onboarding PR
+        url: ${{ steps.verify.output.onboardingUrl }}
+    text:
+      - title: Development VM is running
+        content: |
+          The first OS image is built, promoted and booted. Log in with
+          `virtctl ssh -n ${{ parameters.name }}-dev cloud-user@vm/${{ parameters.name }}`.
+          Later merges to main build, scan and promote a new OS image; apply it in the guest
+          with `sudo bootc upgrade --apply`.
+          Onboarding status record: ${{ steps.verify.output.statusRecord }}.
