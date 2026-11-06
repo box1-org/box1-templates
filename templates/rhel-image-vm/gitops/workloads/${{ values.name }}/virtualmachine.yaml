@@ -1,0 +1,71 @@
+# Halted until the first promotion records the OS image, adds datavolume.yaml to the
+# kustomization and sets runStrategy: Always. Later promotions only update the
+# box1.org/* annotations (no restart); apply them in the guest with
+# `sudo bootc upgrade --apply`.
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: "${{ values.name }}"
+  namespace: "${{ values.namespace }}"
+  annotations:
+    box1.org/os-image-digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    box1.org/source-revision: ${{ values.sourceRevision }}
+    box1.org/build-pipelinerun: awaiting-first-release
+spec:
+  runStrategy: Halted
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: "${{ values.name }}"
+    spec:
+      accessCredentials:
+        - sshPublicKey:
+            source:
+              secret:
+                secretName: "${{ values.name }}-admin-ssh"
+            propagationMethod:
+              qemuGuestAgent:
+                users: [cloud-user]
+      domain:
+        cpu:
+          cores: ${{ values.cpuCores }}
+        memory:
+          guest: ${{ values.memory }}
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        devices:
+          autoattachSerialConsole: true
+          rng: {}
+          disks:
+            - name: root
+              bootOrder: 1
+              disk:
+                bus: virtio
+            # Read by box1-registry-setup.service as /dev/disk/by-id/virtio-<serial>.
+            - name: serviceca
+              serial: serviceca
+              disk:
+                bus: virtio
+            - name: regtoken
+              serial: regtoken
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: root
+          dataVolume:
+            name: "${{ values.name }}-root"
+        - name: serviceca
+          configMap:
+            name: openshift-service-ca.crt
+        - name: regtoken
+          secret:
+            secretName: "${{ values.name }}-updater-token"

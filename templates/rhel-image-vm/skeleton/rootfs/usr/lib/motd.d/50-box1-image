@@ -1,0 +1,5 @@
+${{ values.name }}: RHEL 10 image mode VM (box1 golden path). The OS is immutable;
+change it through Git, and apply approved releases with:
+  sudo bootc upgrade --check     # is a newer approved image available?
+  sudo bootc upgrade --apply     # stage it and reboot
+  sudo bootc status              # booted / staged / rollback images

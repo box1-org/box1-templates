@@ -107,3 +107,27 @@ Location exists, a 409 is treated as a pending registration and the action waits
 for the matching entity. Other catalog errors propagate immediately; an entity
 with a different source repository fails validation. Completed-workflow replay
 therefore does not fail on duplicate catalog locations.
+
+## Onboarding profiles (1.2.0)
+
+`box1:repository:ensure` and every `box1:development:*` action accept an optional `profile` input:
+
+- **`service`** (default): the Quarkus Deployment path. Records, markers, template version, commit message and checks are unchanged from 1.1.x, so in-flight 1.1.x onboardings resume as before.
+- **`virtual-machine`**: RHEL 10 image mode VMs, from template `templates/rhel-image-vm` (box1-docs#55).
+  - The profile is stored in the state record and in the `.box1/onboarding.json` marker. Every later phase must pass the same profile.
+
+What each phase does for `virtual-machine`:
+
+| Phase | Behaviour |
+| --- | --- |
+| Bundle check (`validateVmBundle`) | Expects one Application, plus `namespace`, `updater`, `admin-access`, `virtualmachine`, `datavolume`, `onboarding` and `kustomization` under `workloads/<name>/`. The VM must be Halted with zero digests. `datavolume.yaml` is generated but must not be listed in the kustomization, because DataVolume specs are immutable. Only SSH public keys may appear in Secrets. The registry pull binding is for Group `system:serviceaccounts:<name>-dev`. The rules mirror the `virtual-machine` profile of `box1-gitops-validate`. |
+| Build barrier and platform readiness | Waits for `ci-bootc-release` and its image-builder and privileged-SCC bindings, the `<name>-updater` SA, the Group pull binding, and the VirtualMachine. |
+| Build | One PipelineRun as `ci-bootc-release`: `box1-bootc-build` → `box1-bootc-disk` → `box1-bootc-channel`. Results are the OS image digest and the disk digest. The channel move points `:development` at the image the VM is about to boot. The credential Secret lifecycle is unchanged. |
+| Promote | One promotion PR. It records `box1.org/os-image-digest` and the build run on the VirtualMachine, pins the disk digest, adds `datavolume.yaml` to the kustomization, and sets `runStrategy: Always`. |
+| Verify | Waits up to 25 minutes for: VirtualMachine annotation equals the digest, root DataVolume `Succeeded` (a `Failed` import fails at once), VM Ready, guest agent connected, and Argo Synced and Healthy. |
+
+Hub RBAC: `developer-hub-onboarding-observe` needs `get` on `kubevirt.io` `virtualmachines` and `virtualmachineinstances` and on `cdi.kubevirt.io` `datavolumes` (box1-gitops#65).
+
+Tests:
+- `scripts/test-onboarding-vm.cjs` covers the profile.
+- `scripts/validate.mjs` renders the template and runs the bundle check.

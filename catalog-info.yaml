@@ -8,6 +8,7 @@ spec:
   targets:
     - ./templates/quarkus-rest-service/template.yaml
     - ./templates/github-repository/template.yaml
+    - ./templates/rhel-image-vm/template.yaml
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

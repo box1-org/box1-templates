@@ -1,0 +1,43 @@
+#!/usr/bin/python3
+"""Give bootc trust and pull access for the in-cluster registry at boot.
+
+KubeVirt attaches two small disks (see deploy/virtualmachine.yaml):
+  serial "serviceca": ConfigMap openshift-service-ca.crt (key service-ca.crt)
+  serial "regtoken":  Secret <name>-updater-token (key token)
+The CA goes to /etc/containers/certs.d/<registry>/ca.crt and the pull
+credential to /run/ostree/auth.json (tmpfs, 0600; never in the image or /etc).
+Missing disks (e.g. a local vfkit VM) are skipped, not errors.
+"""
+import base64, json, os, pathlib, shutil, subprocess, sys, tempfile
+
+REGISTRY = os.environ.get("BOX1_REGISTRY", "image-registry.openshift-image-registry.svc:5000")
+
+def read_from_disk(serial, key):
+    device = pathlib.Path("/dev/disk/by-id/virtio-" + serial)
+    if not device.exists():
+        print(f"{serial}: no disk {device}, skipping")
+        return None
+    with tempfile.TemporaryDirectory(dir="/run") as mnt:
+        subprocess.run(["mount", "-o", "ro", str(device), mnt], check=True)
+        try:
+            return (pathlib.Path(mnt) / key).read_bytes()
+        finally:
+            subprocess.run(["umount", mnt], check=True)
+
+ok = True
+ca = read_from_disk("serviceca", "service-ca.crt")
+if ca:
+    certs = pathlib.Path("/etc/containers/certs.d") / REGISTRY
+    certs.mkdir(parents=True, exist_ok=True)
+    (certs / "ca.crt").write_bytes(ca)
+    print(f"installed registry CA for {REGISTRY}")
+
+token = read_from_disk("regtoken", "token")
+if token:
+    auth = base64.b64encode(b"serviceaccount:" + token.strip()).decode()
+    target = pathlib.Path("/run/ostree/auth.json")
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"auths": {REGISTRY: {"auth": auth}}}, f)
+    print(f"installed pull credential for {REGISTRY} in {target}")

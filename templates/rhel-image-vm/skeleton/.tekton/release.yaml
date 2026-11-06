@@ -1,0 +1,215 @@
+# Release on push to main:
+#   build    - OS image box1-ci/${{ values.name }}@digest (box1-bootc-build)
+#   security - TPA SBOM + ACS scan (box1-security-gates, observe)
+#   disk     - containerDisk box1-ci/${{ values.name }}-disk, for (re)installs (box1-bootc-disk)
+#   promote  - box1-workloads-dev PR recording the OS digest on the VirtualMachine
+#   channel  - after the merge and sync, box1-ci/${{ values.name }}:development -> digest
+#   smoke    - Argo, VM and guest agent state
+# The running VM applies an approved image with `sudo bootc upgrade --apply`.
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  labels:
+    backstage.io/kubernetes-id: ${{ values.name }}
+  generateName: "${{ values.name }}-release-"
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/on-target-branch: "[main]"
+    pipelinesascode.tekton.dev/target-namespace: box1-ci
+    pipelinesascode.tekton.dev/max-keep-runs: '10'
+spec:
+  taskRunTemplate:
+    serviceAccountName: ci-bootc-release
+  timeouts:
+    pipeline: 90m
+  params:
+  - name: revision
+    value: "{{revision}}"
+  - name: git-auth-secret
+    value: "{{git_auth_secret}}"
+  - name: security-gates
+    value: observe
+  pipelineSpec:
+    params:
+    - name: revision
+      type: string
+    - name: git-auth-secret
+      type: string
+    - name: security-gates
+      type: string
+      default: observe
+    tasks:
+    - name: build
+      retries: 1   # PAC can briefly create the run before its git auth Secret.
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-bootc-build
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: revision
+        value: "$(params.revision)"
+      - name: git-auth-secret
+        value: "$(params.git-auth-secret)"
+      - name: source-repo
+        value: box1-org/${{ values.name }}
+      - name: image-name
+        value: "${{ values.name }}"
+      - name: push-image
+        value: 'true'
+    - name: security
+      runAfter:
+      - build
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-security-gates
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: image-reference
+        value: "image-registry.openshift-image-registry.svc:5000/box1-ci/${{ values.name }}@$(tasks.build.results.image-digest)"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: source-revision
+        value: "$(params.revision)"
+      - name: source-repository
+        value: "box1-org/${{ values.name }}"
+      - name: application-name
+        value: "${{ values.name }}"
+      - name: pipeline-run
+        value: "$(context.pipelineRun.name)"
+      - name: enforcement
+        value: "$(params.security-gates)"
+      - name: rhtpa-secret
+        value: rhtpa-ci
+      - name: rhacs-secret
+        value: rhacs-ci
+    - name: disk
+      runAfter:
+      - security
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-bootc-disk
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: revision
+        value: "$(params.revision)"
+      - name: image-name
+        value: "${{ values.name }}"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: channel
+        value: development
+    - name: promote
+      runAfter:
+      - disk
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-gitops-promote
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: revision
+        value: "$(params.revision)"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: git-auth-secret
+        value: "$(params.git-auth-secret)"
+      - name: environment
+        value: development
+      - name: pipeline-run
+        value: "$(context.pipelineRun.name)"
+      - name: application-name
+        value: "${{ values.name }}"
+      - name: workload-profile
+        value: virtual-machine
+      - name: disk-digest
+        value: "$(tasks.disk.results.disk-digest)"
+    - name: channel
+      runAfter:
+      - promote
+      when:
+      - input: "$(tasks.promote.results.promoted)"
+        operator: in
+        values:
+        - 'true'
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-bootc-channel
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: image-name
+        value: "${{ values.name }}"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: channel
+        value: development
+    - name: smoke
+      runAfter:
+      - channel
+      when:
+      - input: "$(tasks.promote.results.promoted)"
+        operator: in
+        values:
+        - 'true'
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-vm-smoke
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: revision
+        value: "$(params.revision)"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: application-name
+        value: "${{ values.name }}"
+      - name: application-namespace
+        value: "${{ values.namespace }}"
+    results:
+    - name: image-digest
+      value: "$(tasks.build.results.image-digest)"
+    - name: disk-digest
+      value: "$(tasks.disk.results.disk-digest)"
+    - name: gitops-pr
+      value: "$(tasks.promote.results.pr-url)"
+    - name: gitops-revision
+      value: "$(tasks.promote.results.gitops-revision)"
+    - name: rhacs-url
+      value: "$(tasks.security.results.rhacs-url)"
+    - name: rhtpa-sbom-url
+      value: "$(tasks.security.results.rhtpa-sbom-url)"
+  taskRunSpecs:
+  - pipelineTaskName: security
+    serviceAccountName: ci-build
+  - pipelineTaskName: promote
+    serviceAccountName: ci-gitops
+  - pipelineTaskName: smoke
+    serviceAccountName: ci-observe

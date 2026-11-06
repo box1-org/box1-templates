@@ -5,13 +5,13 @@ const { scaffolderActionsExtensionPoint } = require('@backstage/plugin-scaffolde
 const { DefaultGithubCredentialsProvider, ScmIntegrations } = require('@backstage/integration');
 const { Workflow } = require('./workflow.cjs');
 const {catalogServiceRef}=require('@backstage/plugin-catalog-node');
-const shared = { name:{type:'string',minLength:3,maxLength:35}, owner:{type:'string'} };
+const shared = { name:{type:'string',minLength:3,maxLength:35}, owner:{type:'string'}, profile:{type:'string',enum:['service','virtual-machine'],default:'service',description:'Onboarding profile; must match the profile recorded when the repository was created'} };
 function action(id, operation, config, credentials) {
   const repository = operation === 'repository';
   const output = repository ? ['remoteUrl','repoContentsUrl','commitHash'] : ['sourceUrl','catalogUrl','pipelineUrl','deploymentUrl','argoUrl','onboardingUrl','statusRecord','imageDigest'];
   return createTemplateAction({
     id, description: repository ? 'Create or resume an owned Box1 source repository' : 'Validate development onboarding, await readiness, build, promote and verify first deployment',
-    schema:{input:{type:'object',additionalProperties:false,required:repository?['name','owner','description','visibility']:['name','sourceRevision'],properties:repository?{...shared,description:{type:'string',minLength:1,maxLength:120},visibility:{type:'string',enum:['private','public']}}:{name:shared.name,sourceRevision:{type:'string',pattern:'^[a-f0-9]{40}$'}}},output:{type:'object',properties:Object.fromEntries(output.map(key=>[key,{type:'string'}]))}},
+    schema:{input:{type:'object',additionalProperties:false,required:repository?['name','owner','description','visibility']:['name','sourceRevision'],properties:repository?{...shared,description:{type:'string',minLength:1,maxLength:120},visibility:{type:'string',enum:['private','public']}}:{name:shared.name,profile:shared.profile,sourceRevision:{type:'string',pattern:'^[a-f0-9]{40}$'}}},output:{type:'object',properties:Object.fromEntries(output.map(key=>[key,{type:'string'}]))}},
     async handler(ctx) { await new Workflow({ctx,config,credentials}).run(operation); },
   });
 }

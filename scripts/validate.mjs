@@ -189,3 +189,90 @@ for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quark
 }
 console.log('PASS rejected unsafe/reserved names');
 assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:default/mike4263', visibility: 'public', techdocsOverview: 'a'.repeat(2001) }), 'Accepted an oversized TechDocs overview');
+
+// ---- templates/rhel-image-vm (virtual-machine onboarding profile, box1-docs#55) ----
+{
+  const { createRequire } = await import('node:module');
+  const { validateVmBundle, filesAt } = createRequire(import.meta.url)('../plugins/box1-onboarding/workflow.cjs');
+  const vmSource = path.join(root, 'templates/rhel-image-vm');
+  const vmTemplate = YAML.parse(fs.readFileSync(path.join(vmSource, 'template.yaml'), 'utf8'));
+  const checkVmForm = ajv.compile(vmTemplate.spec.parameters[0]);
+  assert(rootLocation.spec.targets.includes('./templates/rhel-image-vm/template.yaml'), 'rhel-image-vm must be registered in the root Location');
+  assert.equal(vmTemplate.spec.type, 'vm');
+  const phaseSteps = vmTemplate.spec.steps.filter(s => s.action.startsWith('box1:development:') || s.action === 'box1:repository:ensure');
+  assert(phaseSteps.every(s => s.input.profile === 'virtual-machine'), 'Every onboarding step must use the virtual-machine profile');
+  const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGoldenPathValidationKeyGoldenPathValidation admin@box1';
+  for (const [name, extra] of [['vm-golden-check', {}], ['erp-appliance', { cpuCores: 4, memory: '8Gi', rootDiskSize: '20Gi', extraPackages: 'python3-pip sqlite' }], ['v'.repeat(35), {}]]) {
+    const parameters = { name, description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike4263', visibility: 'private', adminSshPublicKey: key, cpuCores: 2, memory: '4Gi', rootDiskSize: '12Gi', extraPackages: '', ...extra };
+    assert(checkVmForm(parameters), JSON.stringify(checkVmForm.errors));
+    const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'b'.repeat(40) };
+    const target = path.join(root, '.validation/rhel-image-vm', name);
+    fs.rmSync(target, { recursive: true, force: true });
+    renderTree(path.join(vmSource, 'skeleton'), path.join(target, 'application'), values);
+    renderTree(path.join(vmSource, 'gitops'), path.join(target, 'gitops'), values);
+    // The plugin's bundle check is the same gate the onboarding action applies.
+    validateVmBundle(await filesAt(path.join(target, 'gitops')), name);
+    const resources = YAML.parseAllDocuments(execFileSync(kubectl, ['kustomize', path.join(target, `gitops/workloads/${name}`)], { encoding: 'utf8' })).map(d => d.toJSON());
+    const vm = resources.find(r => r.kind === 'VirtualMachine');
+    assert.equal(vm.spec.runStrategy, 'Halted');
+    assert.equal(vm.metadata.annotations['box1.org/os-image-digest'], 'sha256:' + '0'.repeat(64));
+    assert.equal(vm.metadata.annotations['box1.org/source-revision'], 'b'.repeat(40));
+    assert.equal(vm.metadata.labels['backstage.io/kubernetes-id'], name);
+    assert.equal(vm.spec.template.spec.domain.cpu.cores, parameters.cpuCores);
+    assert.equal(vm.spec.template.spec.domain.memory.guest, parameters.memory);
+    assert(!resources.some(r => r.kind === 'DataVolume'), 'Unbuilt VM bundle must not render its DataVolume');
+    assert(!resources.some(r => ['Deployment', 'Route', 'Service'].includes(r.kind)));
+    assert.equal(resources.find(r => r.kind === 'Namespace').metadata.labels['box1.org/workload-profile'], 'virtual-machine');
+    assert.equal(resources.find(r => r.kind === 'Secret' && r.metadata.name === `${name}-admin-ssh`).stringData.key1, key);
+    const dv = YAML.parse(fs.readFileSync(path.join(target, `gitops/workloads/${name}/datavolume.yaml`), 'utf8'));
+    assert.equal(dv.spec.storage.resources.requests.storage, parameters.rootDiskSize);
+    assert.match(fs.readFileSync(path.join(target, `gitops/workloads/${name}/datavolume.yaml`), 'utf8'), new RegExp(`^      url: docker://image-registry\\.openshift-image-registry\\.svc:5000/box1-ci/${name}-disk@sha256:0{64}$`, 'm'), 'Promotion contract: 6-space DataVolume url line');
+    assert.match(fs.readFileSync(path.join(target, `gitops/workloads/${name}/kustomization.yaml`), 'utf8'), /^  - virtualmachine\.yaml$/m, 'Promotion contract: kustomization resource line');
+    // Skeleton: OS image definition and pipelines.
+    const app = path.join(target, 'application');
+    const containerfile = fs.readFileSync(path.join(app, 'Containerfile'), 'utf8');
+    assert.match(containerfile, /^FROM registry\.redhat\.io\/rhel10\/rhel-bootc:10\.2@sha256:[a-f0-9]{64}$/m);
+    for (const required of ['setsebool -P virt_qemu_ga_manage_ssh on', `systemctl set-default ${name}.target`, 'bootc container lint', 'systemctl disable bootc-fetch-apply-updates.timer', 'id=entitlement-cert']) assert(containerfile.includes(required), `Containerfile must include ${required}`);
+    assert.match(containerfile, new RegExp(`qemu-guest-agent ${parameters.extraPackages.replace(/[+.]/g, '\\$&')}`));
+    for (const file of [`rootfs/usr/lib/systemd/system/${name}.target`, `rootfs/usr/lib/systemd/system/${name}-heartbeat.service`, `rootfs/usr/libexec/${name}/heartbeat`, 'rootfs/usr/libexec/box1/registry-setup', 'rootfs/usr/lib/systemd/system/box1-registry-setup.service', 'build/repos/rhel10-cdn.repo']) assert(fs.existsSync(path.join(app, file)), `Missing skeleton file ${file}`);
+    assert(fs.statSync(path.join(app, `rootfs/usr/libexec/${name}/heartbeat`)).mode & 0o100, 'heartbeat must be executable');
+    assert(!fs.readFileSync(path.join(app, 'build/repos/rhel10-cdn.repo'), 'utf8').match(/BEGIN|PRIVATE/), 'Repository file must not contain credentials');
+    const pr = YAML.parse(fs.readFileSync(path.join(app, '.tekton/pull-request.yaml'), 'utf8'));
+    assert.equal(pr.spec.taskRunTemplate.serviceAccountName, 'ci-bootc-check');
+    assert.deepEqual(pr.spec.pipelineSpec.tasks.map(t => t.taskRef.params.find(p => p.name === 'name').value), ['box1-bootc-build']);
+    assert.equal(pr.spec.pipelineSpec.tasks[0].params.find(p => p.name === 'push-image').value, 'false');
+    const release = YAML.parseAllDocuments(fs.readFileSync(path.join(app, '.tekton/release.yaml'), 'utf8')).map(d => d.toJSON()).find(Boolean);
+    assert.equal(release.spec.taskRunTemplate.serviceAccountName, 'ci-bootc-release');
+    assert.deepEqual(release.spec.pipelineSpec.tasks.map(t => [t.name, t.taskRef.params.find(p => p.name === 'name').value]), [['build', 'box1-bootc-build'], ['security', 'box1-security-gates'], ['disk', 'box1-bootc-disk'], ['promote', 'box1-gitops-promote'], ['channel', 'box1-bootc-channel'], ['smoke', 'box1-vm-smoke']]);
+    const taskArgs = Object.fromEntries(release.spec.pipelineSpec.tasks.map(t => [t.name, Object.fromEntries(t.params.map(p => [p.name, p.value]))]));
+    assert.equal(taskArgs.promote['workload-profile'], 'virtual-machine');
+    assert.equal(taskArgs.promote['disk-digest'], '$(tasks.disk.results.disk-digest)');
+    assert.equal(taskArgs.promote.environment, 'development');
+    assert.equal(taskArgs.smoke['application-namespace'], name + '-dev');
+    for (const gated of ['channel', 'smoke']) assert.equal(release.spec.pipelineSpec.tasks.find(t => t.name === gated).when?.[0]?.input, '$(tasks.promote.results.promoted)', `${gated} must run only after a merged promotion`);
+    assert.deepEqual(Object.fromEntries(release.spec.taskRunSpecs.map(s => [s.pipelineTaskName, s.serviceAccountName])), { security: 'ci-build', promote: 'ci-gitops', smoke: 'ci-observe' });
+    const entity = YAML.parse(fs.readFileSync(path.join(app, 'catalog-info.yaml'), 'utf8'));
+    assert.equal(entity.metadata.name, name);
+    assert.equal(entity.spec.type, 'vm');
+    assert.equal(entity.metadata.annotations['github.com/project-slug'], `box1-org/${name}`);
+    assert.equal(entity.metadata.annotations['backstage.io/kubernetes-id'], name);
+    // Step inputs against the installed action schemas, when provided.
+    const context = { parameters, steps: { publish: { output: { commitHash: 'b'.repeat(40) } } } };
+    for (const step of vmTemplate.spec.steps) {
+      const action = actions.find(a => a.id === step.action);
+      if (actionsFile) assert(action, `Installed action missing: ${step.action}`);
+      if (action?.schema?.input) {
+        const input = JSON.parse(env.renderString(JSON.stringify(step.input), context));
+        const check = ajv.compile(action.schema.input);
+        assert(check(input), `${step.id}: ${JSON.stringify(check.errors)}`);
+      }
+    }
+    console.log(`PASS rhel-image-vm ${name}: render, plugin bundle check, Kustomize, Containerfile, pipeline contract, catalog${actionsFile ? ', installed actions' : ''}`);
+  }
+  const base = { name: 'vm-golden-check', description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike4263', visibility: 'private', adminSshPublicKey: key };
+  for (const adminSshPublicKey of ['', 'not-a-key', key + '\nssh-ed25519 AAAA second', '-----BEGIN OPENSSH PRIVATE KEY-----']) assert(!checkVmForm({ ...base, adminSshPublicKey }), 'Accepted invalid SSH public key');
+  for (const extraPackages of ['vim; rm -rf /', '$(id)', 'Vim', 'a  b', ' leading']) assert(!checkVmForm({ ...base, extraPackages }), `Accepted unsafe package list: ${extraPackages}`);
+  for (const name of ['box1-vm', 'quarkus-reference', 'Upper', 'a'.repeat(36)]) assert(!checkVmForm({ ...base, name }), `Accepted unsafe VM name: ${name}`);
+  for (const rootDiskSize of ['5Gi', '1Ti']) assert(!checkVmForm({ ...base, rootDiskSize }), 'Accepted an unsupported root disk size');
+  console.log('PASS rhel-image-vm rejected unsafe keys, packages, names and sizes');
+}

@@ -1,0 +1,4 @@
+# Serial consoles: KubeVirt exposes ttyS0 on x86_64 (virtctl console);
+# vfkit on Apple Silicon exposes a virtio console, hvc0.
+kargs = ["console=tty0", "console=ttyS0,115200n8"]
+match-architectures = ["x86_64"]

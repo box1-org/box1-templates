@@ -1,0 +1,24 @@
+# RHEL 10 CDN repositories for image builds. Contains no credentials: the
+# entitlement certificate is mounted at build time from Secret
+# box1-ci/etc-pki-entitlement (pipeline) or a local copy (local/build-local.sh).
+[rhel-10-baseos]
+name=Red Hat Enterprise Linux 10 for $basearch - BaseOS (RPMs)
+baseurl=https://cdn.redhat.com/content/dist/rhel10/$releasever/$basearch/baseos/os
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+sslverify=1
+sslcacert=/etc/rhsm/ca/redhat-uep.pem
+sslclientcert=/run/secrets/entitlement/entitlement.pem
+sslclientkey=/run/secrets/entitlement/entitlement-key.pem
+
+[rhel-10-appstream]
+name=Red Hat Enterprise Linux 10 for $basearch - AppStream (RPMs)
+baseurl=https://cdn.redhat.com/content/dist/rhel10/$releasever/$basearch/appstream/os
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+sslverify=1
+sslcacert=/etc/rhsm/ca/redhat-uep.pem
+sslclientcert=/run/secrets/entitlement/entitlement.pem
+sslclientkey=/run/secrets/entitlement/entitlement-key.pem
