@@ -37,7 +37,7 @@ function renderTree(from, to, values) {
 
 const techdocsOverview = 'First line with "quotes" & <b>markup</b>: `code`.\n\nSecond paragraph.';
 for (const [name, integrations] of [['orders-api', { postgres: false, kafka: false, techdocsOverview }], ['inventory-service', { postgres: true, kafka: false }], ['quarkus-golden-path-smoke', { postgres: false, kafka: true }], ['a'.repeat(35), { postgres: true, kafka: true }]]) {
-  const parameters = { name, description: 'A Quarkus REST service on OpenShift', owner: 'user:default/mike4263', visibility: 'private', ...integrations };
+  const parameters = { name, description: 'A Quarkus REST service on OpenShift', owner: 'user:default/mike', visibility: 'private', ...integrations };
   assert(checkForm(parameters), JSON.stringify(checkForm.errors));
   const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'a'.repeat(40) };
   const target = path.join(root, '.validation', name);
@@ -166,7 +166,7 @@ assert.equal(rootComponent.metadata.annotations['github.com/project-slug'], 'box
 assert.equal(repositoryTemplate.spec.parameters[0].properties.visibility.default, 'public');
 assert.deepEqual(repositoryTemplate.spec.steps.map(step => step.action), ['fetch:template', 'publish:github', 'catalog:register']);
 for (const name of ['team-notes', 'box1-example-docs', 'a'.repeat(63)]) {
-  const parameters = { name, description: 'A plain repository', owner: 'user:default/mike4263', visibility: 'public' };
+  const parameters = { name, description: 'A plain repository', owner: 'user:default/mike', visibility: 'public' };
   assert(checkRepositoryForm(parameters), JSON.stringify(checkRepositoryForm.errors));
   const target = path.join(root, '.validation/github-repository', name);
   fs.rmSync(target, { recursive: true, force: true });
@@ -189,14 +189,14 @@ for (const name of ['team-notes', 'box1-example-docs', 'a'.repeat(63)]) {
   console.log(`PASS github-repository ${name}: render, ownership, no build or deployment files`);
 }
 for (const name of ['../escape', 'Uppercase', 'ab', 'a--b', 'a-', 'a'.repeat(64)]) {
-  assert(!checkRepositoryForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'public' }), `Accepted unsafe repository name: ${name}`);
+  assert(!checkRepositoryForm({ name, description: 'Invalid name test', owner: 'user:default/mike', visibility: 'public' }), `Accepted unsafe repository name: ${name}`);
 }
 console.log('PASS github-repository rejected unsafe names');
 for (const name of ['../escape', 'Uppercase', 'ab', 'box1-workloads-dev', 'quarkus-reference', 'orders-service', 'default', 'rhdh', 'openshift-gitops', 'kube-system', 'a--b', 'a-', 'a'.repeat(36)]) {
-  assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike4263', visibility: 'private' }), `Accepted unsafe name: ${name}`);
+  assert(!checkForm({ name, description: 'Invalid name test', owner: 'user:default/mike', visibility: 'private' }), `Accepted unsafe name: ${name}`);
 }
 console.log('PASS rejected unsafe/reserved names');
-assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:default/mike4263', visibility: 'public', techdocsOverview: 'a'.repeat(2001) }), 'Accepted an oversized TechDocs overview');
+assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:default/mike', visibility: 'public', techdocsOverview: 'a'.repeat(2001) }), 'Accepted an oversized TechDocs overview');
 
 // ---- templates/rhel-image-vm (virtual-machine onboarding profile, box1-docs#55) ----
 {
@@ -211,7 +211,7 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
   assert(phaseSteps.every(s => s.input.profile === 'virtual-machine'), 'Every onboarding step must use the virtual-machine profile');
   const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGoldenPathValidationKeyGoldenPathValidation admin@box1';
   for (const [name, extra] of [['vm-golden-check', {}], ['erp-appliance', { cpuCores: 4, memory: '8Gi', rootDiskSize: '20Gi', extraPackages: 'python3-pip sqlite' }], ['v'.repeat(35), {}]]) {
-    const parameters = { name, description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike4263', visibility: 'private', adminSshPublicKey: key, cpuCores: 2, memory: '4Gi', rootDiskSize: '12Gi', extraPackages: '', ...extra };
+    const parameters = { name, description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike', visibility: 'private', adminSshPublicKey: key, cpuCores: 2, memory: '4Gi', rootDiskSize: '12Gi', extraPackages: '', ...extra };
     assert(checkVmForm(parameters), JSON.stringify(checkVmForm.errors));
     const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'b'.repeat(40) };
     const target = path.join(root, '.validation/rhel-image-vm', name);
@@ -277,7 +277,7 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
     }
     console.log(`PASS rhel-image-vm ${name}: render, plugin bundle check, Kustomize, Containerfile, pipeline contract, catalog${actionsFile ? ', installed actions' : ''}`);
   }
-  const base = { name: 'vm-golden-check', description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike4263', visibility: 'private', adminSshPublicKey: key };
+  const base = { name: 'vm-golden-check', description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike', visibility: 'private', adminSshPublicKey: key };
   for (const adminSshPublicKey of ['', 'not-a-key', key + '\nssh-ed25519 AAAA second', '-----BEGIN OPENSSH PRIVATE KEY-----']) assert(!checkVmForm({ ...base, adminSshPublicKey }), 'Accepted invalid SSH public key');
   for (const extraPackages of ['vim; rm -rf /', '$(id)', 'Vim', 'a  b', ' leading']) assert(!checkVmForm({ ...base, extraPackages }), `Accepted unsafe package list: ${extraPackages}`);
   for (const name of ['box1-vm', 'quarkus-reference', 'Upper', 'a'.repeat(36)]) assert(!checkVmForm({ ...base, name }), `Accepted unsafe VM name: ${name}`);

@@ -21,4 +21,4 @@ metadata:
 spec:
   type: repository
   lifecycle: experimental
-  owner: user:default/mike4263
+  owner: user:default/mike

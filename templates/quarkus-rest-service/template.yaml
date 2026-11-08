@@ -8,7 +8,7 @@ metadata:
   annotations:
     box1.org/template-version: "1.2.0"
 spec:
-  owner: user:default/mike4263
+  owner: user:default/mike
   type: service
   parameters:
     - title: Service details
@@ -31,7 +31,7 @@ spec:
         owner:
           title: Catalog owner
           type: string
-          default: user:default/mike4263
+          default: user:default/mike
           ui:field: OwnerPicker
           ui:options:
             catalogFilter:
