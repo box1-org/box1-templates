@@ -9,7 +9,7 @@ components:
     container:
       # Box1 UDI (Dev Spaces UDI + JDK 21 default, JBang/Camel, Claude Code CLI, box1-* helpers).
       # Bump by digest from the box1-devspaces release PipelineRun output.
-      image: image-registry.openshift-image-registry.svc:5000/box1-devtools/box1-udi@sha256:9ac4cffa71e2287d6240716cc2accf48d23b1f11b759af87f59066ae37d5c6aa
+      image: image-registry.openshift-image-registry.svc:5000/box1-devtools/box1-udi@sha256:c3d29a29ae754af2544d052b87ec21d9ccea7dd5287a8cf4dc217d5512397310
       memoryRequest: 2Gi
       memoryLimit: 6Gi
       cpuRequest: 500m
@@ -22,13 +22,12 @@ components:
           value: /usr/lib/jvm/java-21-openjdk
         - name: MAVEN_OPTS
           value: -Dmaven.repo.local=/home/user/.m2/repository
+      # Nothing is mounted inside /home/user: it is the persistent home (a subPath of the
+      # per-user PVC), and nested mounts there blocked workspace deletion on the node.
+      # ~/.m2 persists with the home; podman storage is ephemeral (CONTAINERS_STORAGE_CONF).
       volumeMounts:
-        - name: m2
-          path: /home/user/.m2
-        # Podman images and containers stay off the persistent home: layers owned by
-        # sub-UIDs there cannot be removed by the workspace cleanup job (box1-docs#114).
         - name: container-storage
-          path: /home/user/.local/share/containers
+          path: /var/lib/box1-containers
       endpoints:
         - name: quarkus-dev
           targetPort: 8080
@@ -38,9 +37,6 @@ components:
         - name: debug
           targetPort: 5005
           exposure: none
-  - name: m2
-    volume:
-      size: 3Gi
   - name: container-storage
     volume:
       ephemeral: true
