@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "redhat.java",
+    "vscjava.vscode-java-debug",
+    "redhat.vscode-quarkus",
+    "redhat.vscode-kaoto",
+    "redhat.vscode-tekton-pipelines",
+    "Anthropic.claude-code"
+  ]
+}

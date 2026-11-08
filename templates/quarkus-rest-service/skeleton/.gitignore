@@ -21,8 +21,10 @@ bin/
 # NetBeans
 nb-configuration.xml
 
-# Visual Studio Code
-.vscode
+# Visual Studio Code (the shared workspace recommendations and debug config are tracked)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
 .factorypath
 
 # OSX
