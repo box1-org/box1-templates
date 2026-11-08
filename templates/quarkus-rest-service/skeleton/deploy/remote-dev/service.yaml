@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: ${{ values.name }}-remote-dev
 spec:
+  selector:
+    app.kubernetes.io/name: ${{ values.name }}-remote-dev
   ports:
     - name: http
       port: 8080
