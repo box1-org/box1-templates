@@ -33,6 +33,9 @@ spec:
           env:
             - name: QUARKUS_LAUNCH_DEVMODE
               value: "true"
+            # Dev Services would try to start Testcontainers inside the pod; dependencies are explicit here.
+            - name: QUARKUS_DEVSERVICES_ENABLED
+              value: "false"
             - name: QUARKUS_LIVE_RELOAD_PASSWORD
               valueFrom:
                 secretKeyRef:
