@@ -43,7 +43,7 @@ test('VM bundle check rejects unsafe or off-contract changes',async()=>{
 test('VM repository marker records the profile; service marker keeps its original shape',async()=>{
  for(const profile of ['virtual-machine','service']){
   const w=workflow({},profile);w.data=null;const puts=[];
-  w.ctx.input={...w.ctx.input,owner:'user:default/mike4263',visibility:'private',description:'A RHEL 10 image mode virtual machine'};
+  w.ctx.input={...w.ctx.input,owner:'user:default/mike',visibility:'private',description:'A RHEL 10 image mode virtual machine'};
   w.save=async(phase,extra={})=>{w.data={...(w.data||{}),...extra,phase:phase??w.data?.phase};};
   w.github=async(p,method,body)=>{if(p.endsWith('/contents/.box1/onboarding.json')&&method==='PUT'){puts.push(JSON.parse(Buffer.from(body.content,'base64').toString()));return {};}if(p===`/repos/box1-org/${name}`&&method!=='PATCH')return null;if(p==='/orgs/box1-org/repos')return {description:body.description,size:0};return {};};
   w.content=async()=>null;w.data=null;

@@ -23,7 +23,7 @@ no build, pipeline, namespace, or deployment. Names that already exist are refus
 
 ## Ownership and prerequisites
 
-Template owner: `user:default/mike4263`. Developers select an imported catalog
+Template owner: `user:default/mike`. Developers select an imported catalog
 User or Group for each service. Both GitHub Apps must remain installed for all
 organization repositories: Developer Hub creates repositories and onboarding
 PRs; Box1 Pipelines handles GitHub events and short-lived CI tokens.
