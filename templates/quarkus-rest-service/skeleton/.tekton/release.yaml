@@ -20,8 +20,10 @@ spec:
     value: "{{revision}}"
   - name: git-auth-secret
     value: "{{git_auth_secret}}"
+  # ACS scan/check and TPA SBOM run by default and block promotion of a
+  # policy-failing image (box1-docs#42). Modes: disabled, observe, gate.
   - name: security-gates
-    value: disabled
+    value: gate
   pipelineSpec:
     params:
     - name: revision
@@ -30,7 +32,7 @@ spec:
       type: string
     - name: security-gates
       type: string
-      default: disabled
+      default: gate
     tasks:
     - name: build
       taskRef:

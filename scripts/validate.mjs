@@ -142,6 +142,14 @@ for (const [name, integrations] of [['orders-api', { postgres: false, kafka: fal
         if (task.name === 'smoke') assert.equal(args['application-namespace'], name + '-dev');
       }
     }
+    if (file === '.tekton/release.yaml') {
+      // box1-docs#42: new services run ACS/TPA checks and block on policy failure.
+      assert.equal(run.spec.params.find(p => p.name === 'security-gates')?.value, 'gate', 'release must pass security-gates: gate');
+      assert.equal(run.spec.pipelineSpec.params.find(p => p.name === 'security-gates')?.default, 'gate', 'release security-gates default must be gate');
+      const security = run.spec.pipelineSpec.tasks.find(t => t.name === 'security');
+      assert.equal(security?.params.find(p => p.name === 'enforcement')?.value, '$(params.security-gates)');
+      assert.equal(run.spec.pipelineSpec.tasks.find(t => t.name === 'promote')?.runAfter?.includes('security'), true, 'promote must wait for the security gate');
+    }
   }
   console.log(`PASS ${name}: render, ownership, pipeline contract, namespaces, Kustomize${actionsFile ? ', installed actions' : ''}`);
 }
