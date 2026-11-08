@@ -25,6 +25,10 @@ components:
       volumeMounts:
         - name: m2
           path: /home/user/.m2
+        # Podman images and containers stay off the persistent home: layers owned by
+        # sub-UIDs there cannot be removed by the workspace cleanup job (box1-docs#114).
+        - name: container-storage
+          path: /home/user/.local/share/containers
       endpoints:
         - name: quarkus-dev
           targetPort: 8080
@@ -37,6 +41,10 @@ components:
   - name: m2
     volume:
       size: 3Gi
+  - name: container-storage
+    volume:
+      ephemeral: true
+      size: 8Gi
 commands:
   - id: test
     exec:
