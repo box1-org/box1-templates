@@ -27,6 +27,18 @@ Checkstyle, and SpotBugs/FindSecBugs. `/api/info` includes the immutable Git SHA
 embedded in the image; local builds default to `unknown` unless supplied above.
 Java package `org.box1` is deliberately stable across generated services.
 
+## OpenShift Dev Spaces
+
+Open this repository from its Developer Hub "Open in Dev Spaces" link. `devfile.yaml` starts the Box1 UDI (box1-org/box1-devspaces), which installs the recommended extensions: Java, Quarkus, Kaoto, Tekton and Claude Code. The workspace commands, under Terminal → Run Task → devfile, are:
+
+| Command | What it does |
+| --- | --- |
+| Test / Quarkus dev | Runs `./mvnw test` or `quarkus:dev` in the workspace. Dev mode listens for a debugger on `localhost:5005`. |
+| Tekton | Runs the PR validation pipeline in `box1-ci` for the **pushed** HEAD, then follows or lists its runs. |
+| Remote dev | Deploys uncommitted code to your `<user>-sandbox` namespace (`deploy/remote-dev`) and live-syncs changes to it. It never touches `${{ values.name }}-dev`. |
+| Debug | Forwards the sandbox or dev JVM to `localhost:5005`. Then start "Attach to JVM (localhost:5005)". The dev service needs the `jvm-debug` component enabled in box1-workloads-dev. |
+| Hawtio | Prints the Hawtio Online URL. |
+
 ## First deployment
 
 Create the service in Developer Hub. Its task tracks repository creation,
