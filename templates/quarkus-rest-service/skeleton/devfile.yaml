@@ -9,7 +9,7 @@ components:
     container:
       # Box1 UDI (Dev Spaces UDI + JDK 21 default, JBang/Camel, Claude Code CLI, box1-* helpers).
       # Bump by digest from the box1-devspaces release PipelineRun output.
-      image: image-registry.openshift-image-registry.svc:5000/box1-devtools/box1-udi@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      image: image-registry.openshift-image-registry.svc:5000/box1-devtools/box1-udi@sha256:ba61eab4bfc7b81996b8860834d26f228999cf18971ec8c37378e36ee0316bb2
       memoryRequest: 2Gi
       memoryLimit: 6Gi
       cpuRequest: 500m
