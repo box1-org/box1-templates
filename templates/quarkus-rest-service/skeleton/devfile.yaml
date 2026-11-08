@@ -124,8 +124,17 @@ commands:
       commandLine: box1-debug dev
       group:
         kind: debug
+  - id: podman-socket
+    exec:
+      label: "7. Containers: start the podman API for Testcontainers (-Pcontainers)"
+      component: tools
+      # Never fails the workspace start (older images lack the helper; container run may be off).
+      commandLine: 'box1-podman-socket start || echo "podman API not started, see box1-podman-socket status"'
   - id: hawtio
     exec:
       label: "6. Hawtio: print the Hawtio Online console URL"
       component: tools
       commandLine: echo "https://$(oc get route -n hawtio -o jsonpath='{.items[0].spec.host}')"
+events:
+  postStart:
+    - podman-socket
