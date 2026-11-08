@@ -21,6 +21,13 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Overrides the Quarkus BOM until it ships a fix for CVE-2026-102554, as in every box1 service. The RHACS
+                 release gate fails on the BOM's Guava 33.6.0-jre. Remove when the BOM moves on. -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>33.7.2-jre</version>
+            </dependency>
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>${quarkus.platform.artifact-id}</artifactId>
