@@ -6,7 +6,7 @@ metadata:
   description: RHEL 10 image mode (bootc) virtual machine on OpenShift Virtualization, with a Tekton OS image build, GitOps-promoted updates and a verified first boot.
   tags: [rhel, bootc, image-mode, kubevirt, virtualization, tekton, golden-path]
   annotations:
-    box1.org/template-version: "1.0.0"
+    box1.org/template-version: "1.1.0"
 spec:
   owner: user:default/mike
   type: vm
@@ -70,6 +70,11 @@ spec:
           pattern: '^([a-z0-9][a-z0-9+._-]*( [a-z0-9][a-z0-9+._-]*)*)?$'
           default: ''
           description: Optional space-separated RHEL 10 BaseOS/AppStream package names, installed in the OS image.
+        cloudInit:
+          title: Per-instance identity with cloud-init (NoCloud)
+          type: boolean
+          default: false
+          description: Installs cloud-init restricted to a NoCloud disk, so one OS image can boot as several VM instances, each with its own site configuration and machine credential (box1-docs#140). It writes files only and never manages accounts, SSH keys, passwords, disks or networking. The VM created here boots without a NoCloud disk.
   steps:
     - id: fetchApplication
       name: Generate OS image definition and pipelines
@@ -83,6 +88,7 @@ spec:
           description: ${{ parameters.description }}
           owner: ${{ parameters.owner }}
           extraPackages: ${{ parameters.extraPackages }}
+          cloudInit: ${{ parameters.cloudInit }}
     - id: publish
       name: Create or resume source repository
       action: box1:repository:ensure
