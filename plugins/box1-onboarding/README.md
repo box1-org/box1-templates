@@ -96,7 +96,7 @@ resources are created only by the existing Argo GitOps controller after merge.
 The Hub backend is a trusted privileged component: protect template edits and
 Hub administration accordingly. Do not expose these actions to untrusted users.
 
-Validation: `npm run validate && npm run test:onboarding`. The latter exercises
+Validation: `npm run validate && npm run test:onboarding && npm run test:onboarding-oci`. `test:onboarding` exercises
 development-only scope, baseline protection, lease exclusion, readiness gates,
 credential/run creation ordering, completed-build reuse, and exact-check/App
 merge gating. Live acceptance uses POST `/api/scaffolder/v2/tasks` with the normal
@@ -108,9 +108,11 @@ for the matching entity. Other catalog errors propagate immediately; an entity
 with a different source repository fails validation. Completed-workflow replay
 therefore does not fail on duplicate catalog locations.
 
-## Onboarding profiles (1.2.0)
+## Onboarding profiles
 
-`box1:repository:ensure` and every `box1:development:*` action accept an optional `profile` input:
+Profiles were introduced in 1.2.0. Since 1.3.0 every profile-specific behaviour is an entry in the `PROFILES` dispatch table in `workflow.cjs`; see [Adding an onboarding profile](#adding-an-onboarding-profile-130).
+
+`box1:repository:ensure` and every `box1:development:*` action accept an optional `profile` input. Its enum is generated from the table:
 
 - **`service`** (default): the Quarkus Deployment path. Records, markers, template version, commit message and checks are unchanged from 1.1.x, so in-flight 1.1.x onboardings resume as before.
 - **`virtual-machine`**: RHEL 10 image mode VMs, from template `templates/rhel-image-vm` (box1-docs#55).
@@ -131,3 +133,57 @@ Hub RBAC: `developer-hub-onboarding-observe` needs `get` on `kubevirt.io` `virtu
 Tests:
 - `scripts/test-onboarding-vm.cjs` covers the profile.
 - `scripts/validate.mjs` renders the template and runs the bundle check.
+
+## Adding an onboarding profile (1.3.0)
+
+A profile is one entry in `PROFILES` (`workflow.cjs`) plus the handlers it names. The
+Workflow phases call the handlers and never test the profile name, so do not add
+`if (profile === …)` branches to the Workflow. The full contract is the comment above
+`PROFILES`. Every handler receives the Workflow `w`, which provides `w.name`, `w.ns`,
+`w.key`, `w.profile`, `w.data` (the state record), `w.kube`, `w.wait(label, seconds, observe)`,
+`w.content(repo, file)`, `w.save(phase, extra)`, `w.github(path, method, body)`,
+`w.checkpoint()` and `w.ctx.output(key, value)`.
+
+| Key | Used by | Absent (`null`) means |
+| --- | --- | --- |
+| `templateVersion`, `commitMessage` | `box1:repository:ensure`: record, marker and skeleton commit | `commitMessage` may be `null` only with `sourceRepository: false` |
+| `sourceRepository` (default `true`) | `box1:repository:ensure` | `false`: the action is refused; there is no source repository |
+| `initialRecord(w)` | `box1:development:provision`, only when no record exists | the record must come from `box1:repository:ensure` |
+| `recordFields(w)`, `markerFields(w)` | the REQUESTED record (after `templateVersion`) and `.box1/onboarding.json` | — (return `{}` to add nothing) |
+| `validateBundle(files, name)` | `provision` and `promote` | no GitOps bundle: no onboarding PR, Application sync or promotion |
+| `buildBarrier(w)` | end of `platform` | no build prerequisites |
+| `platformChecks(w)` | readiness observed during `build`; `{condition: async () => true or 'pending reason'}` | no readiness set |
+| `buildSpec(w, secretName)` | `build`: the first PipelineRun spec | no PipelineRun or build credential |
+| `buildResults(w, run)` | `build`: fields saved with IMAGE_BUILT, which must include `imageDigest` (resume treats it as "build done"); throw to reject. `run` is `null` without `buildSpec`. Required when `buildSpec` is set | with `buildSpec` also `null`: no build at all |
+| `promotionUpdates(w, files)` | `promote`: files of the first-release PR in `box1-workloads-dev` | no promotion PR or promotion sync |
+| `verify(w)` | `verify`: wait for the delivered state, save, set outputs | nothing to verify |
+| `catalogComplete(data)` | `box1:catalog:ensure` | — (required) |
+
+Rules:
+
+- Declare every key, using `null` for an absent phase; a test checks this. A skipped
+  phase still checks the recorded source revision and profile, and logs `state=skipped`.
+- A new profile must store itself in the record and marker (`recordFields` and
+  `markerFields` returning `{profile: w.profile}`). Only `service` omits it, for
+  compatibility with records written before 1.2.0.
+- Catalog actions take only `name`. They read the profile from the stored record, so
+  `catalogComplete` is evaluated for the profile that onboarding recorded.
+- Keep `service` and `virtual-machine` unchanged: `scripts/test-onboarding-characterisation.cjs`
+  compares their records, markers, PR files, PipelineRuns, stored results, readiness
+  checks, verify sequence and action schemas with
+  `scripts/fixtures/onboarding-profiles-characterisation.json`, recorded on 1.2.0. Do
+  not regenerate the fixture to make a change pass.
+- Known limits of 1.3.0 that a new profile may have to extend in the Workflow itself
+  (add a handler rather than a profile-name branch):
+  - with a non-null `validateBundle`, `platform` and `build` sync and wait for the
+    Argo Application named `<name>` (`requestServiceSync`, `awaitServiceSync`);
+  - `promotionUpdates` can only produce a promotion PR in `box1-workloads-dev`;
+  - `box1:catalog:submit`/`verify`/`ensure` always register `component:default/<name>`
+    from `github.com/box1-org/<name>/…/catalog-info.yaml`;
+  - with `sourceRepository: false` the record is created by `provision`, so the
+    template must run the catalog steps after `provision`: `catalogSubmit` on a missing
+    record would create an incomplete one.
+- Add the profile's tests next to `scripts/test-onboarding-profiles.cjs`, which shows
+  test-only profiles without a GitOps workload and without a source repository.
+- Templates pass `profile: <name>` to every onboarding step. Releasing the plugin is
+  required before a template can use a new profile.

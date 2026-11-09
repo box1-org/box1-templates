@@ -3,9 +3,9 @@ const { createBackendModule, coreServices } = require('@backstage/backend-plugin
 const { createTemplateAction } = require('@backstage/plugin-scaffolder-node');
 const { scaffolderActionsExtensionPoint } = require('@backstage/plugin-scaffolder-node');
 const { DefaultGithubCredentialsProvider, ScmIntegrations } = require('@backstage/integration');
-const { Workflow } = require('./workflow.cjs');
+const { Workflow, profileInputSchema } = require('./workflow.cjs');
 const {catalogServiceRef}=require('@backstage/plugin-catalog-node');
-const shared = { name:{type:'string',minLength:3,maxLength:35}, owner:{type:'string'}, profile:{type:'string',enum:['service','virtual-machine'],default:'service',description:'Onboarding profile; must match the profile recorded when the repository was created'} };
+const shared = { name:{type:'string',minLength:3,maxLength:35}, owner:{type:'string'}, profile:profileInputSchema() };
 function action(id, operation, config, credentials) {
   const repository = operation === 'repository';
   const output = repository ? ['remoteUrl','repoContentsUrl','commitHash'] : ['sourceUrl','catalogUrl','pipelineUrl','deploymentUrl','argoUrl','onboardingUrl','statusRecord','imageDigest'];

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "validate": "node scripts/validate.mjs",
-    "test:onboarding": "node --test scripts/test-onboarding.cjs scripts/test-onboarding-vm.cjs",
+    "test:onboarding": "node --test scripts/test-onboarding.cjs scripts/test-onboarding-vm.cjs scripts/test-onboarding-profiles.cjs scripts/test-onboarding-characterisation.cjs scripts/test-onboarding-sync-equivalence.cjs",
     "package:onboarding-oci": "node scripts/package-onboarding-oci.mjs",
     "inspect:onboarding-oci": "node scripts/inspect-onboarding-oci.mjs",
     "test:onboarding-oci": "node --test scripts/test-onboarding-oci.mjs"

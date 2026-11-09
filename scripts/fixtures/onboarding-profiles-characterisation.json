@@ -1,0 +1,2038 @@
+{
+ "profiles": {
+  "service": {
+   "recordAndMarker": {
+    "result": {
+     "ok": true
+    },
+    "requestedRecord": "{\"schemaVersion\":2,\"onboardingId\":\"00000000-0000-4000-8000-000000000002\",\"serviceName\":\"orders-api\",\"phase\":\"REQUESTED\",\"phaseStatus\":\"succeeded\",\"phaseStartedAt\":\"<time>\",\"lastTransitionAt\":\"<time>\",\"updatedAt\":\"<time>\",\"activeWaits\":[],\"id\":\"00000000-0000-4000-8000-000000000003\",\"name\":\"orders-api\",\"namespace\":\"orders-api-dev\",\"owner\":\"user:default/mike\",\"visibility\":\"private\",\"description\":\"Characterisation run\",\"templateVersion\":\"1.1.0\",\"createdAt\":\"<time>\",\"lastSuccessfulState\":\"REQUESTED\",\"history\":[{\"phase\":\"REQUESTED\",\"at\":\"<time>\"}]}",
+    "marker": "{\n  \"id\": \"00000000-0000-4000-8000-000000000003\",\n  \"name\": \"orders-api\",\n  \"namespace\": \"orders-api-dev\",\n  \"owner\": \"user:default/mike\",\n  \"templateVersion\": \"1.1.0\"\n}\n",
+    "commitMessage": "Create Quarkus service from the Box1 golden path",
+    "skeleton": {
+     "entries": 33,
+     "sha256": "25993abd4be757fa33d4f57dd42160890fa27ee9ae6bd826f201b87b0a969cb1"
+    },
+    "github": [
+     "GET /repos/box1-org/orders-api",
+     "POST /orgs/box1-org/repos",
+     "GET /repos/box1-org/orders-api/contents/.box1/onboarding.json?ref=main",
+     "PUT /repos/box1-org/orders-api/contents/.box1/onboarding.json",
+     "GET /repos/box1-org/orders-api/git/ref/heads/main",
+     "GET /repos/box1-org/orders-api/git/commits/dddddddddddddddddddddddddddddddddddddddd",
+     "GET /repos/box1-org/orders-api/git/trees/tree-0?recursive=1",
+     "GET /repos/box1-org/orders-api/git/commits/dddddddddddddddddddddddddddddddddddddddd",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/blobs",
+     "POST /repos/box1-org/orders-api/git/trees",
+     "POST /repos/box1-org/orders-api/git/commits",
+     "PATCH /repos/box1-org/orders-api/git/refs/heads/main",
+     "PATCH /repos/box1-org/orders-api"
+    ],
+    "finalRecord": {
+     "schemaVersion": 2,
+     "onboardingId": "00000000-0000-4000-8000-000000000002",
+     "serviceName": "orders-api",
+     "phase": "REPOSITORY_READY",
+     "phaseStatus": "succeeded",
+     "phaseStartedAt": "<time>",
+     "lastTransitionAt": "<time>",
+     "updatedAt": "<time>",
+     "activeWaits": [],
+     "id": "00000000-0000-4000-8000-000000000003",
+     "name": "orders-api",
+     "namespace": "orders-api-dev",
+     "owner": "user:default/mike",
+     "visibility": "private",
+     "description": "Characterisation run",
+     "templateVersion": "1.1.0",
+     "createdAt": "<time>",
+     "lastSuccessfulState": "REPOSITORY_READY",
+     "history": [
+      {
+       "phase": "REQUESTED",
+       "at": "<time>"
+      },
+      {
+       "phase": "REPOSITORY_READY",
+       "at": "<time>"
+      }
+     ],
+     "sourceRevision": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+     "sourceUrl": "https://github.com/box1-org/orders-api"
+    },
+    "outputs": {
+     "remoteUrl": "https://github.com/box1-org/orders-api",
+     "repoContentsUrl": "https://github.com/box1-org/orders-api/blob/main",
+     "commitHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+   },
+   "bundle": {
+    "files": {
+     "applications/orders-api.yaml": {
+      "mode": "100644",
+      "sha256": "c2ef3e28c91555b7a4f80d6dbc8b049eadd1a3aa71b3e2cb9f84d94fcfee3fd1"
+     },
+     "workloads/orders-api/deployment.yaml": {
+      "mode": "100644",
+      "sha256": "bbb2c33c57c5acb446df65f4c658e1793a8e57f6acf785d11c26008bcdfc354e"
+     },
+     "workloads/orders-api/kustomization.yaml": {
+      "mode": "100644",
+      "sha256": "313081a2a0cefc3b421972b79f3c8bef70cf08ccf52904d378fa46e410cca305"
+     },
+     "workloads/orders-api/namespace.yaml": {
+      "mode": "100644",
+      "sha256": "58bf5a9558d4d64cc9e550cee66bbf7894f1f03157c89c488b1bebf48dfcc2ec"
+     },
+     "workloads/orders-api/onboarding.yaml": {
+      "mode": "100644",
+      "sha256": "4adcc5ee6f2303350740b4d10da00943f4a7543b40fec14bc693b4bbf97b1b30"
+     },
+     "workloads/orders-api/postgres.yaml": {
+      "mode": "100644",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+     },
+     "workloads/orders-api/route.yaml": {
+      "mode": "100644",
+      "sha256": "4e1f781ff5e4bfe257b19dae825f4f1f02ab1d6b88a640d562e7fc32aee875a5"
+     },
+     "workloads/orders-api/service.yaml": {
+      "mode": "100644",
+      "sha256": "c3401052ed675f78ff386bc3f1ca7244023af2b3ddd8ece8d35614b9861173fe"
+     },
+     "workloads/orders-api/serviceaccount.yaml": {
+      "mode": "100644",
+      "sha256": "159728278aad9d4d1a8e4d12fbf529b10c661193c9b38d3219cd6c11ba6c10b9"
+     }
+    },
+    "returnsInputUnchanged": true
+   },
+   "bundleOfOtherProfile": {
+    "error": "Onboarding must add one Application and the scoped development workload files"
+   },
+   "onboardingPR": {
+    "first": {
+     "ok": true
+    },
+    "prs": [
+     {
+      "stage": "onboarding",
+      "files": {
+       "applications/orders-api.yaml": {
+        "mode": "100644",
+        "sha256": "c2ef3e28c91555b7a4f80d6dbc8b049eadd1a3aa71b3e2cb9f84d94fcfee3fd1"
+       },
+       "workloads/orders-api/deployment.yaml": {
+        "mode": "100644",
+        "sha256": "bbb2c33c57c5acb446df65f4c658e1793a8e57f6acf785d11c26008bcdfc354e"
+       },
+       "workloads/orders-api/kustomization.yaml": {
+        "mode": "100644",
+        "sha256": "313081a2a0cefc3b421972b79f3c8bef70cf08ccf52904d378fa46e410cca305"
+       },
+       "workloads/orders-api/namespace.yaml": {
+        "mode": "100644",
+        "sha256": "58bf5a9558d4d64cc9e550cee66bbf7894f1f03157c89c488b1bebf48dfcc2ec"
+       },
+       "workloads/orders-api/onboarding.yaml": {
+        "mode": "100644",
+        "sha256": "4adcc5ee6f2303350740b4d10da00943f4a7543b40fec14bc693b4bbf97b1b30"
+       },
+       "workloads/orders-api/postgres.yaml": {
+        "mode": "100644",
+        "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+       },
+       "workloads/orders-api/route.yaml": {
+        "mode": "100644",
+        "sha256": "4e1f781ff5e4bfe257b19dae825f4f1f02ab1d6b88a640d562e7fc32aee875a5"
+       },
+       "workloads/orders-api/service.yaml": {
+        "mode": "100644",
+        "sha256": "c3401052ed675f78ff386bc3f1ca7244023af2b3ddd8ece8d35614b9861173fe"
+       },
+       "workloads/orders-api/serviceaccount.yaml": {
+        "mode": "100644",
+        "sha256": "159728278aad9d4d1a8e4d12fbf529b10c661193c9b38d3219cd6c11ba6c10b9"
+       }
+      }
+     }
+    ],
+    "callsAfterMerged": 0
+   },
+   "platform": {
+    "missing": {
+     "barrier": {
+      "error": "wait did not finish: initial build prerequisites"
+     },
+     "readiness": {
+      "error": "wait did not finish: development platform readiness"
+     },
+     "waits": [
+      {
+       "label": "initial build prerequisites",
+       "seconds": 300,
+       "seen": [
+        "orders-api-dev Namespace Active"
+       ]
+      },
+      {
+       "label": "development platform readiness",
+       "seconds": 900,
+       "seen": [
+        "condition=namespace state=orders-api-dev Namespace Active; condition=serviceaccounts state=orders-api-dev/orders-api ServiceAccount; condition=registry_pull state=service registry pull permission; condition=registry_push state=CI registry push permission; condition=observer_rbac state=orders-api-dev release observer permissions; condition=pac_repository state=PAC Repository registration; condition=argo_application state=Argo CD Application Synced in orders-api-dev; condition=deployment state=initial Deployment"
+       ]
+      }
+     ],
+     "conditions": {
+      "namespace": "orders-api-dev Namespace Active",
+      "serviceaccounts": "orders-api-dev/orders-api ServiceAccount",
+      "registry_pull": "service registry pull permission",
+      "registry_push": "CI registry push permission",
+      "observer_rbac": "orders-api-dev release observer permissions",
+      "pac_repository": "PAC Repository registration",
+      "argo_application": "Argo CD Application Synced in orders-api-dev",
+      "deployment": "initial Deployment"
+     },
+     "conditionKeys": [
+      "namespace",
+      "serviceaccounts",
+      "registry_pull",
+      "registry_push",
+      "observer_rbac",
+      "pac_repository",
+      "argo_application",
+      "deployment"
+     ],
+     "kubeReads": [
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-build",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-gitops",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-observe",
+      "GET /api/v1/namespaces/orders-api-dev",
+      "GET /api/v1/namespaces/orders-api-dev/serviceaccounts/orders-api",
+      "GET /apis/apps/v1/namespaces/orders-api-dev/deployments/orders-api",
+      "GET /apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/orders-api",
+      "GET /apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/orders-api",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/orders-api-image-puller",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/rolebindings/orders-api-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/roles/orders-api-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/orders-api-dev/rolebindings/orders-api-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/orders-api-dev/roles/orders-api-release-observer"
+     ]
+    },
+    "ready": {
+     "barrier": {
+      "ok": true
+     },
+     "readiness": {
+      "ok": true
+     },
+     "waits": [
+      {
+       "label": "initial build prerequisites",
+       "seconds": 300,
+       "seen": [
+        true
+       ]
+      },
+      {
+       "label": "development platform readiness",
+       "seconds": 900,
+       "seen": [
+        true
+       ]
+      }
+     ],
+     "conditions": {
+      "namespace": "ready",
+      "serviceaccounts": "ready",
+      "registry_pull": "ready",
+      "registry_push": "ready",
+      "observer_rbac": "ready",
+      "pac_repository": "ready",
+      "argo_application": "ready",
+      "deployment": "ready"
+     },
+     "conditionKeys": [
+      "namespace",
+      "serviceaccounts",
+      "registry_pull",
+      "registry_push",
+      "observer_rbac",
+      "pac_repository",
+      "argo_application",
+      "deployment"
+     ],
+     "kubeReads": [
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-build",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-gitops",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-observe",
+      "GET /api/v1/namespaces/orders-api-dev",
+      "GET /api/v1/namespaces/orders-api-dev/serviceaccounts/orders-api",
+      "GET /apis/apps/v1/namespaces/orders-api-dev/deployments/orders-api",
+      "GET /apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/orders-api",
+      "GET /apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/orders-api",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/orders-api-image-puller",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/rolebindings/orders-api-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/roles/orders-api-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/orders-api-dev/rolebindings/orders-api-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/orders-api-dev/roles/orders-api-release-observer"
+     ]
+    }
+   },
+   "build": {
+    "result": {
+     "ok": true
+    },
+    "waits": [
+     {
+      "label": "initial CI build onb-orders-api-aaaaaaaa",
+      "seconds": 2800,
+      "seen": [
+       true
+      ]
+     }
+    ],
+    "created": {
+     "secret": {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "metadata": {
+       "name": "onb-orders-api-aaaaaaaa-git",
+       "namespace": "box1-ci",
+       "labels": {
+        "box1.org/onboarding-id": "11111111-1111-4111-8111-111111111111"
+       },
+       "annotations": {
+        "box1.org/expires-at": "<time>"
+       }
+      },
+      "type": "Opaque",
+      "stringData": {
+       "git-provider-token": "<test-token>"
+      }
+     },
+     "pipelineRun": {
+      "apiVersion": "tekton.dev/v1",
+      "kind": "PipelineRun",
+      "metadata": {
+       "name": "onb-orders-api-aaaaaaaa",
+       "namespace": "box1-ci",
+       "labels": {
+        "backstage.io/kubernetes-id": "orders-api",
+        "box1.org/onboarding-id": "11111111-1111-4111-8111-111111111111"
+       }
+      },
+      "spec": {
+       "taskRunTemplate": {
+        "serviceAccountName": "ci-build"
+       },
+       "timeouts": {
+        "pipeline": "45m"
+       },
+       "pipelineSpec": {
+        "tasks": [
+         {
+          "name": "build",
+          "taskRef": {
+           "resolver": "cluster",
+           "params": [
+            {
+             "name": "kind",
+             "value": "task"
+            },
+            {
+             "name": "name",
+             "value": "box1-quarkus-maven"
+            },
+            {
+             "name": "namespace",
+             "value": "box1-ci"
+            }
+           ]
+          },
+          "params": [
+           {
+            "name": "revision",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+           },
+           {
+            "name": "source-repo",
+            "value": "box1-org/orders-api"
+           },
+           {
+            "name": "git-auth-secret",
+            "value": "onb-orders-api-aaaaaaaa-git"
+           },
+           {
+            "name": "push-image",
+            "value": "true"
+           },
+           {
+            "name": "image-name",
+            "value": "orders-api"
+           }
+          ]
+         }
+        ],
+        "results": [
+         {
+          "name": "image-digest",
+          "value": "$(tasks.build.results.image-digest)"
+         }
+        ]
+       }
+      }
+     },
+     "secretOwner": [
+      {
+       "apiVersion": "tekton.dev/v1",
+       "kind": "PipelineRun",
+       "name": "onb-orders-api-aaaaaaaa",
+       "uid": "run-uid"
+      }
+     ]
+    },
+    "kubeWrites": [
+     "POST /api/v1/namespaces/box1-ci/secrets",
+     "POST /apis/tekton.dev/v1/namespaces/box1-ci/pipelineruns",
+     "PUT /api/v1/namespaces/box1-ci/secrets/onb-orders-api-aaaaaaaa-git",
+     "DELETE /api/v1/namespaces/box1-ci/secrets/onb-orders-api-aaaaaaaa-git"
+    ],
+    "stored": {
+     "phase": "IMAGE_BUILT",
+     "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "pipelineName": "onb-orders-api-aaaaaaaa",
+     "credentialSecret": "onb-orders-api-aaaaaaaa-git"
+    },
+    "records": [
+     {
+      "schemaVersion": 2,
+      "id": "11111111-1111-4111-8111-111111111111",
+      "onboardingId": "11111111-1111-4111-8111-111111111111",
+      "name": "orders-api",
+      "namespace": "orders-api-dev",
+      "owner": "user:default/mike",
+      "visibility": "private",
+      "description": "Characterisation",
+      "templateVersion": "x",
+      "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sourceUrl": "https://github.com/box1-org/orders-api",
+      "phase": "BUILD_RUNNING",
+      "history": [
+       {
+        "phase": "PLATFORM_READY",
+        "at": "t"
+       },
+       {
+        "phase": "BUILD_RUNNING",
+        "at": "<time>"
+       }
+      ],
+      "onboardingPR": {
+       "merged": true,
+       "mergeCommit": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "applicationsSyncedAt": "t",
+      "serviceName": "orders-api",
+      "phaseStatus": "succeeded",
+      "phaseStartedAt": "<time>",
+      "lastTransitionAt": "<time>",
+      "updatedAt": "<time>",
+      "activeWaits": [],
+      "pipelineName": "onb-orders-api-aaaaaaaa",
+      "credentialSecret": "onb-orders-api-aaaaaaaa-git",
+      "lastSuccessfulState": "BUILD_RUNNING"
+     },
+     {
+      "schemaVersion": 2,
+      "id": "11111111-1111-4111-8111-111111111111",
+      "onboardingId": "11111111-1111-4111-8111-111111111111",
+      "name": "orders-api",
+      "namespace": "orders-api-dev",
+      "owner": "user:default/mike",
+      "visibility": "private",
+      "description": "Characterisation",
+      "templateVersion": "x",
+      "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sourceUrl": "https://github.com/box1-org/orders-api",
+      "phase": "IMAGE_BUILT",
+      "history": [
+       {
+        "phase": "PLATFORM_READY",
+        "at": "t"
+       },
+       {
+        "phase": "BUILD_RUNNING",
+        "at": "<time>"
+       },
+       {
+        "phase": "IMAGE_BUILT",
+        "at": "<time>"
+       }
+      ],
+      "onboardingPR": {
+       "merged": true,
+       "mergeCommit": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "applicationsSyncedAt": "t",
+      "serviceName": "orders-api",
+      "phaseStatus": "succeeded",
+      "phaseStartedAt": "<time>",
+      "lastTransitionAt": "<time>",
+      "updatedAt": "<time>",
+      "activeWaits": [],
+      "pipelineName": "onb-orders-api-aaaaaaaa",
+      "credentialSecret": "onb-orders-api-aaaaaaaa-git",
+      "lastSuccessfulState": "IMAGE_BUILT",
+      "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+     }
+    ]
+   },
+   "buildWithoutImageDigest": {
+    "error": "Initial CI did not return an immutable image digest"
+   },
+   "buildWithoutDiskDigest": {
+    "ok": true
+   },
+   "resume": {
+    "afterPlatformReady": {
+     "platform": {
+      "ok": true
+     },
+     "build": {
+      "ok": true
+     },
+     "waits": [],
+     "kubeCalls": [],
+     "phase": "PLATFORM_READY"
+    },
+    "afterImageBuilt": {
+     "platform": {
+      "ok": true
+     },
+     "build": {
+      "ok": true
+     },
+     "waits": [
+      "development platform readiness"
+     ],
+     "pipelineCalls": [],
+     "phase": "PLATFORM_READY",
+     "records": [
+      "PLATFORM_READY"
+     ]
+    }
+   },
+   "promote": {
+    "first": {
+     "result": {
+      "ok": true
+     },
+     "prs": [
+      {
+       "stage": "promotion",
+       "files": {
+        "workloads/orders-api/deployment.yaml": {
+         "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: orders-api\n  namespace: orders-api-dev\n  annotations:\n    box1.org/source-revision: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n    box1.org/build-pipelinerun: box1-ci/onb-orders-api-aaaaaaaa\nspec:\n  replicas: 1\n  revisionHistoryLimit: 3\n  progressDeadlineSeconds: 300\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxUnavailable: 0\n      maxSurge: 1\n  selector:\n    matchLabels:\n      app.kubernetes.io/name: orders-api\n  template:\n    metadata:\n      labels:\n        app.kubernetes.io/name: orders-api\n        app.kubernetes.io/part-of: box1-golden-path\n    spec:\n      serviceAccountName: orders-api\n      automountServiceAccountToken: false\n      terminationGracePeriodSeconds: 30\n      securityContext:\n        runAsNonRoot: true\n        seccompProfile:\n          type: RuntimeDefault\n      containers:\n        - name: application\n          image: orders-api\n          imagePullPolicy: IfNotPresent\n          ports:\n            - name: http\n              containerPort: 8080\n          envFrom:\n            - configMapRef:\n                name: orders-api-config\n\n          resources:\n            requests:\n              cpu: 100m\n              memory: 256Mi\n            limits:\n              cpu: '1'\n              memory: 512Mi\n          startupProbe:\n            httpGet:\n              path: /q/health/started\n              port: http\n            periodSeconds: 5\n            timeoutSeconds: 2\n            failureThreshold: 30\n          readinessProbe:\n            httpGet:\n              path: /q/health/ready\n              port: http\n            periodSeconds: 5\n            timeoutSeconds: 2\n            failureThreshold: 3\n          livenessProbe:\n            httpGet:\n              path: /q/health/live\n              port: http\n            periodSeconds: 10\n            timeoutSeconds: 2\n            failureThreshold: 3\n          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: true\n            capabilities:\n              drop: [ALL]\n          volumeMounts:\n            - name: tmp\n              mountPath: /tmp\n      volumes:\n        - name: tmp\n          emptyDir:\n            sizeLimit: 64Mi\n",
+         "mode": "100644"
+        },
+        "workloads/orders-api/kustomization.yaml": {
+         "content": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nlabels:\n  - pairs:\n      backstage.io/kubernetes-id: orders-api\n    includeSelectors: false\n    includeTemplates: true\nresources:\n  - namespace.yaml\n  - serviceaccount.yaml\n  - deployment.yaml\n  - service.yaml\n  - route.yaml\n  - onboarding.yaml\n\nconfigMapGenerator:\n  - name: orders-api-config\n    namespace: orders-api-dev\n    literals:\n      - GREETING_PREFIX=Hello from box1\n      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=50.0 -Djava.io.tmpdir=/tmp\n\n\nimages:\n  - name: orders-api\n    newName: image-registry.openshift-image-registry.svc:5000/box1-ci/orders-api\n    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111\n",
+         "mode": "100644"
+        }
+       }
+      }
+     ],
+     "syncRequests": 1
+    },
+    "beforePlatformReady": {
+     "error": "Platform readiness has not completed; retry the same service to resume"
+    },
+    "drifted": {
+     "error": "First-release GitOps content drifted: workloads/orders-api/kustomization.yaml"
+    },
+    "resumedAfterMerge": {
+     "result": {
+      "ok": true
+     },
+     "prCalls": 0
+    }
+   },
+   "verify": {
+    "success": {
+     "result": {
+      "ok": true
+     },
+     "waits": [
+      {
+       "label": "first deployment and public endpoint",
+       "seconds": 900,
+       "seen": [
+        "Argo CD Synced and Healthy",
+        "digest-pinned Deployment Available",
+        "public Route HTTP 503",
+        "public readiness UP",
+        true
+       ]
+      }
+     ],
+     "records": [
+      {
+       "phase": "DEPLOYMENT_READY",
+       "extra": {
+        "deploymentImage": "image-registry.openshift-image-registry.svc:5000/box1-ci/orders-api@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "deploymentReadyAt": "<time>"
+       }
+      }
+     ],
+     "outputs": {
+      "sourceUrl": "https://github.com/box1-org/orders-api",
+      "catalogUrl": "https://developer-hub.apps.ocp.box1.org/catalog/default/component/orders-api",
+      "pipelineUrl": "https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/onb-x",
+      "deploymentUrl": "https://orders-api-dev.apps.ocp.box1.org",
+      "argoUrl": "https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/orders-api",
+      "onboardingUrl": "https://github.com/box1-org/box1-workloads-dev/pull/1",
+      "statusRecord": "rhdh/box1-onboard-orders-api",
+      "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+     },
+     "fetched": [
+      "https://orders-api-dev.apps.ocp.box1.org/api/info",
+      "https://orders-api-dev.apps.ocp.box1.org/q/health/ready"
+     ]
+    },
+    "withoutImage": {
+     "error": "Cannot verify deployment without an image digest"
+    },
+    "failedSync": {
+     "error": "Argo orders-api sync did not complete: expected revision cccccccccccccccccccccccccccccccccccccccc, observed ffffffffffffffffffffffffffffffffffffffff, sync OutOfSync, health Degraded, operation Failed, sync failed"
+    }
+   },
+   "catalog": {
+    "complete": {
+     "result": {
+      "ok": true
+     },
+     "catalogCalls": [
+      "get component:default/orders-api",
+      "add https://github.com/box1-org/orders-api/tree/main/catalog-info.yaml",
+      "get component:default/orders-api"
+     ],
+     "phases": [
+      "CATALOG_SUBMITTING",
+      "CATALOG_SUBMITTED",
+      "CATALOG_REGISTERING",
+      "COMPLETE"
+     ],
+     "outputs": {
+      "entityRef": "component:default/orders-api",
+      "catalogInfoUrl": "https://github.com/box1-org/orders-api/tree/main/catalog-info.yaml"
+     }
+    },
+    "withoutDeploymentImage": {
+     "result": {
+      "error": "Catalog completion requires a verified development deployment"
+     },
+     "catalogCalls": [],
+     "phases": [],
+     "outputs": {}
+    },
+    "withoutPromotion": {
+     "result": {
+      "error": "Catalog completion requires a verified development deployment"
+     },
+     "catalogCalls": [],
+     "phases": [],
+     "outputs": {}
+    },
+    "noRecord": {
+     "result": {
+      "error": "Catalog completion requires a verified development deployment"
+     },
+     "catalogCalls": [],
+     "phases": [],
+     "outputs": {}
+    },
+    "submitBeforeDelivery": {
+     "result": {
+      "ok": true
+     },
+     "catalogCalls": [
+      "get component:default/orders-api",
+      "add https://github.com/box1-org/orders-api/tree/main/catalog-info.yaml"
+     ],
+     "phase": "CATALOG_SUBMITTED"
+    }
+   }
+  },
+  "virtual-machine": {
+   "recordAndMarker": {
+    "result": {
+     "ok": true
+    },
+    "requestedRecord": "{\"schemaVersion\":2,\"onboardingId\":\"00000000-0000-4000-8000-000000000002\",\"serviceName\":\"vm-golden-check\",\"phase\":\"REQUESTED\",\"phaseStatus\":\"succeeded\",\"phaseStartedAt\":\"<time>\",\"lastTransitionAt\":\"<time>\",\"updatedAt\":\"<time>\",\"activeWaits\":[],\"id\":\"00000000-0000-4000-8000-000000000003\",\"name\":\"vm-golden-check\",\"namespace\":\"vm-golden-check-dev\",\"owner\":\"user:default/mike\",\"visibility\":\"private\",\"description\":\"Characterisation run\",\"templateVersion\":\"1.0.0\",\"profile\":\"virtual-machine\",\"createdAt\":\"<time>\",\"lastSuccessfulState\":\"REQUESTED\",\"history\":[{\"phase\":\"REQUESTED\",\"at\":\"<time>\"}]}",
+    "marker": "{\n  \"id\": \"00000000-0000-4000-8000-000000000003\",\n  \"name\": \"vm-golden-check\",\n  \"namespace\": \"vm-golden-check-dev\",\n  \"owner\": \"user:default/mike\",\n  \"templateVersion\": \"1.0.0\",\n  \"profile\": \"virtual-machine\"\n}\n",
+    "commitMessage": "Create RHEL image mode VM from the Box1 golden path",
+    "skeleton": {
+     "entries": 22,
+     "sha256": "cb00dc44247c5b82bc09c8d5f327ab20df090fa3b145c2c7b9bde0ae9dc95fb9"
+    },
+    "github": [
+     "GET /repos/box1-org/vm-golden-check",
+     "POST /orgs/box1-org/repos",
+     "GET /repos/box1-org/vm-golden-check/contents/.box1/onboarding.json?ref=main",
+     "PUT /repos/box1-org/vm-golden-check/contents/.box1/onboarding.json",
+     "GET /repos/box1-org/vm-golden-check/git/ref/heads/main",
+     "GET /repos/box1-org/vm-golden-check/git/commits/dddddddddddddddddddddddddddddddddddddddd",
+     "GET /repos/box1-org/vm-golden-check/git/trees/tree-0?recursive=1",
+     "GET /repos/box1-org/vm-golden-check/git/commits/dddddddddddddddddddddddddddddddddddddddd",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/blobs",
+     "POST /repos/box1-org/vm-golden-check/git/trees",
+     "POST /repos/box1-org/vm-golden-check/git/commits",
+     "PATCH /repos/box1-org/vm-golden-check/git/refs/heads/main",
+     "PATCH /repos/box1-org/vm-golden-check"
+    ],
+    "finalRecord": {
+     "schemaVersion": 2,
+     "onboardingId": "00000000-0000-4000-8000-000000000002",
+     "serviceName": "vm-golden-check",
+     "phase": "REPOSITORY_READY",
+     "phaseStatus": "succeeded",
+     "phaseStartedAt": "<time>",
+     "lastTransitionAt": "<time>",
+     "updatedAt": "<time>",
+     "activeWaits": [],
+     "id": "00000000-0000-4000-8000-000000000003",
+     "name": "vm-golden-check",
+     "namespace": "vm-golden-check-dev",
+     "owner": "user:default/mike",
+     "visibility": "private",
+     "description": "Characterisation run",
+     "templateVersion": "1.0.0",
+     "profile": "virtual-machine",
+     "createdAt": "<time>",
+     "lastSuccessfulState": "REPOSITORY_READY",
+     "history": [
+      {
+       "phase": "REQUESTED",
+       "at": "<time>"
+      },
+      {
+       "phase": "REPOSITORY_READY",
+       "at": "<time>"
+      }
+     ],
+     "sourceRevision": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+     "sourceUrl": "https://github.com/box1-org/vm-golden-check"
+    },
+    "outputs": {
+     "remoteUrl": "https://github.com/box1-org/vm-golden-check",
+     "repoContentsUrl": "https://github.com/box1-org/vm-golden-check/blob/main",
+     "commitHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+   },
+   "bundle": {
+    "files": {
+     "applications/vm-golden-check.yaml": {
+      "mode": "100644",
+      "sha256": "f73a57e0bd4111c452f3efe72a01fc550b64a8f283afe19975e19e932e529054"
+     },
+     "workloads/vm-golden-check/admin-access.yaml": {
+      "mode": "100644",
+      "sha256": "3050d286d6b78a4c213d746f871cd0260ab37ee9e7e4743fcbf9ca53daa14a0e"
+     },
+     "workloads/vm-golden-check/datavolume.yaml": {
+      "mode": "100644",
+      "sha256": "be8bfc6f95d30006316da6e792b57e5f24842681735b233b194697d894dca9da"
+     },
+     "workloads/vm-golden-check/kustomization.yaml": {
+      "mode": "100644",
+      "sha256": "2edf71b49a61890249b0faee882367f4ad824b1d73c80b3c860cd192cf71a090"
+     },
+     "workloads/vm-golden-check/namespace.yaml": {
+      "mode": "100644",
+      "sha256": "0f4278145e68a037094b433dd7b9e86b8928c26431b8780304c967689f737c37"
+     },
+     "workloads/vm-golden-check/onboarding.yaml": {
+      "mode": "100644",
+      "sha256": "c99cd9516a0000df616cd1bdf5230db13d9c9b261264a5a51c47327ce952726b"
+     },
+     "workloads/vm-golden-check/updater.yaml": {
+      "mode": "100644",
+      "sha256": "a69249c839e0714cf5a0b2fad9e72984fa23620dfa5e91378f4c832298706565"
+     },
+     "workloads/vm-golden-check/virtualmachine.yaml": {
+      "mode": "100644",
+      "sha256": "0b33ce00f91d17d8421a3b12a2501704f17404b12ca71a7a274723317ab979e3"
+     }
+    },
+    "returnsInputUnchanged": true
+   },
+   "bundleOfOtherProfile": {
+    "error": "VM onboarding must add one Application and the scoped development VM files"
+   },
+   "onboardingPR": {
+    "first": {
+     "ok": true
+    },
+    "prs": [
+     {
+      "stage": "onboarding",
+      "files": {
+       "applications/vm-golden-check.yaml": {
+        "mode": "100644",
+        "sha256": "f73a57e0bd4111c452f3efe72a01fc550b64a8f283afe19975e19e932e529054"
+       },
+       "workloads/vm-golden-check/admin-access.yaml": {
+        "mode": "100644",
+        "sha256": "3050d286d6b78a4c213d746f871cd0260ab37ee9e7e4743fcbf9ca53daa14a0e"
+       },
+       "workloads/vm-golden-check/datavolume.yaml": {
+        "mode": "100644",
+        "sha256": "be8bfc6f95d30006316da6e792b57e5f24842681735b233b194697d894dca9da"
+       },
+       "workloads/vm-golden-check/kustomization.yaml": {
+        "mode": "100644",
+        "sha256": "2edf71b49a61890249b0faee882367f4ad824b1d73c80b3c860cd192cf71a090"
+       },
+       "workloads/vm-golden-check/namespace.yaml": {
+        "mode": "100644",
+        "sha256": "0f4278145e68a037094b433dd7b9e86b8928c26431b8780304c967689f737c37"
+       },
+       "workloads/vm-golden-check/onboarding.yaml": {
+        "mode": "100644",
+        "sha256": "c99cd9516a0000df616cd1bdf5230db13d9c9b261264a5a51c47327ce952726b"
+       },
+       "workloads/vm-golden-check/updater.yaml": {
+        "mode": "100644",
+        "sha256": "a69249c839e0714cf5a0b2fad9e72984fa23620dfa5e91378f4c832298706565"
+       },
+       "workloads/vm-golden-check/virtualmachine.yaml": {
+        "mode": "100644",
+        "sha256": "0b33ce00f91d17d8421a3b12a2501704f17404b12ca71a7a274723317ab979e3"
+       }
+      }
+     }
+    ],
+    "callsAfterMerged": 0
+   },
+   "platform": {
+    "missing": {
+     "barrier": {
+      "error": "wait did not finish: initial VM build prerequisites"
+     },
+     "readiness": {
+      "error": "wait did not finish: development platform readiness"
+     },
+     "waits": [
+      {
+       "label": "initial VM build prerequisites",
+       "seconds": 300,
+       "seen": [
+        "vm-golden-check-dev Namespace Active"
+       ]
+      },
+      {
+       "label": "development platform readiness",
+       "seconds": 900,
+       "seen": [
+        "condition=namespace state=vm-golden-check-dev Namespace Active; condition=serviceaccounts state=vm-golden-check-dev/vm-golden-check-updater ServiceAccount; condition=registry_pull state=VM namespace registry pull permission; condition=registry_push state=bootc registry push permission; condition=observer_rbac state=vm-golden-check-dev release observer permissions; condition=pac_repository state=PAC Repository registration; condition=argo_application state=Argo CD Application Synced in vm-golden-check-dev; condition=virtual_machine state=initial VirtualMachine"
+       ]
+      }
+     ],
+     "conditions": {
+      "namespace": "vm-golden-check-dev Namespace Active",
+      "serviceaccounts": "vm-golden-check-dev/vm-golden-check-updater ServiceAccount",
+      "registry_pull": "VM namespace registry pull permission",
+      "registry_push": "bootc registry push permission",
+      "observer_rbac": "vm-golden-check-dev release observer permissions",
+      "pac_repository": "PAC Repository registration",
+      "argo_application": "Argo CD Application Synced in vm-golden-check-dev",
+      "virtual_machine": "initial VirtualMachine"
+     },
+     "conditionKeys": [
+      "namespace",
+      "serviceaccounts",
+      "registry_pull",
+      "registry_push",
+      "observer_rbac",
+      "pac_repository",
+      "argo_application",
+      "virtual_machine"
+     ],
+     "kubeReads": [
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-bootc-release",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-gitops",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-observe",
+      "GET /api/v1/namespaces/vm-golden-check-dev",
+      "GET /api/v1/namespaces/vm-golden-check-dev/serviceaccounts/vm-golden-check-updater",
+      "GET /apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/vm-golden-check",
+      "GET /apis/kubevirt.io/v1/namespaces/vm-golden-check-dev/virtualmachines/vm-golden-check",
+      "GET /apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/vm-golden-check",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-privileged-scc",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-release-image-builder",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/vm-golden-check-image-puller",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/rolebindings/vm-golden-check-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/roles/vm-golden-check-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/vm-golden-check-dev/rolebindings/vm-golden-check-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/vm-golden-check-dev/roles/vm-golden-check-release-observer"
+     ]
+    },
+    "ready": {
+     "barrier": {
+      "ok": true
+     },
+     "readiness": {
+      "ok": true
+     },
+     "waits": [
+      {
+       "label": "initial VM build prerequisites",
+       "seconds": 300,
+       "seen": [
+        true
+       ]
+      },
+      {
+       "label": "development platform readiness",
+       "seconds": 900,
+       "seen": [
+        true
+       ]
+      }
+     ],
+     "conditions": {
+      "namespace": "ready",
+      "serviceaccounts": "ready",
+      "registry_pull": "ready",
+      "registry_push": "ready",
+      "observer_rbac": "ready",
+      "pac_repository": "ready",
+      "argo_application": "ready",
+      "virtual_machine": "ready"
+     },
+     "conditionKeys": [
+      "namespace",
+      "serviceaccounts",
+      "registry_pull",
+      "registry_push",
+      "observer_rbac",
+      "pac_repository",
+      "argo_application",
+      "virtual_machine"
+     ],
+     "kubeReads": [
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-bootc-release",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-gitops",
+      "GET /api/v1/namespaces/box1-ci/serviceaccounts/ci-observe",
+      "GET /api/v1/namespaces/vm-golden-check-dev",
+      "GET /api/v1/namespaces/vm-golden-check-dev/serviceaccounts/vm-golden-check-updater",
+      "GET /apis/argoproj.io/v1alpha1/namespaces/openshift-gitops/applications/vm-golden-check",
+      "GET /apis/kubevirt.io/v1/namespaces/vm-golden-check-dev/virtualmachines/vm-golden-check",
+      "GET /apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/vm-golden-check",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-privileged-scc",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-release-image-builder",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/vm-golden-check-image-puller",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/rolebindings/vm-golden-check-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/openshift-gitops/roles/vm-golden-check-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/vm-golden-check-dev/rolebindings/vm-golden-check-release-observer",
+      "GET /apis/rbac.authorization.k8s.io/v1/namespaces/vm-golden-check-dev/roles/vm-golden-check-release-observer"
+     ]
+    }
+   },
+   "build": {
+    "result": {
+     "ok": true
+    },
+    "waits": [
+     {
+      "label": "initial CI build onb-vm-golden-check-bbbbbbbb",
+      "seconds": 2800,
+      "seen": [
+       true
+      ]
+     }
+    ],
+    "created": {
+     "secret": {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "metadata": {
+       "name": "onb-vm-golden-check-bbbbbbbb-git",
+       "namespace": "box1-ci",
+       "labels": {
+        "box1.org/onboarding-id": "11111111-1111-4111-8111-111111111111"
+       },
+       "annotations": {
+        "box1.org/expires-at": "<time>"
+       }
+      },
+      "type": "Opaque",
+      "stringData": {
+       "git-provider-token": "<test-token>"
+      }
+     },
+     "pipelineRun": {
+      "apiVersion": "tekton.dev/v1",
+      "kind": "PipelineRun",
+      "metadata": {
+       "name": "onb-vm-golden-check-bbbbbbbb",
+       "namespace": "box1-ci",
+       "labels": {
+        "backstage.io/kubernetes-id": "vm-golden-check",
+        "box1.org/onboarding-id": "11111111-1111-4111-8111-111111111111"
+       }
+      },
+      "spec": {
+       "taskRunTemplate": {
+        "serviceAccountName": "ci-bootc-release"
+       },
+       "timeouts": {
+        "pipeline": "45m"
+       },
+       "pipelineSpec": {
+        "tasks": [
+         {
+          "name": "build",
+          "taskRef": {
+           "resolver": "cluster",
+           "params": [
+            {
+             "name": "kind",
+             "value": "task"
+            },
+            {
+             "name": "name",
+             "value": "box1-bootc-build"
+            },
+            {
+             "name": "namespace",
+             "value": "box1-ci"
+            }
+           ]
+          },
+          "params": [
+           {
+            "name": "revision",
+            "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+           },
+           {
+            "name": "source-repo",
+            "value": "box1-org/vm-golden-check"
+           },
+           {
+            "name": "git-auth-secret",
+            "value": "onb-vm-golden-check-bbbbbbbb-git"
+           },
+           {
+            "name": "push-image",
+            "value": "true"
+           },
+           {
+            "name": "image-name",
+            "value": "vm-golden-check"
+           }
+          ]
+         },
+         {
+          "name": "disk",
+          "runAfter": [
+           "build"
+          ],
+          "taskRef": {
+           "resolver": "cluster",
+           "params": [
+            {
+             "name": "kind",
+             "value": "task"
+            },
+            {
+             "name": "name",
+             "value": "box1-bootc-disk"
+            },
+            {
+             "name": "namespace",
+             "value": "box1-ci"
+            }
+           ]
+          },
+          "params": [
+           {
+            "name": "revision",
+            "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+           },
+           {
+            "name": "image-name",
+            "value": "vm-golden-check"
+           },
+           {
+            "name": "image-digest",
+            "value": "$(tasks.build.results.image-digest)"
+           },
+           {
+            "name": "channel",
+            "value": "development"
+           }
+          ]
+         },
+         {
+          "name": "channel",
+          "runAfter": [
+           "disk"
+          ],
+          "taskRef": {
+           "resolver": "cluster",
+           "params": [
+            {
+             "name": "kind",
+             "value": "task"
+            },
+            {
+             "name": "name",
+             "value": "box1-bootc-channel"
+            },
+            {
+             "name": "namespace",
+             "value": "box1-ci"
+            }
+           ]
+          },
+          "params": [
+           {
+            "name": "image-name",
+            "value": "vm-golden-check"
+           },
+           {
+            "name": "image-digest",
+            "value": "$(tasks.build.results.image-digest)"
+           },
+           {
+            "name": "channel",
+            "value": "development"
+           }
+          ]
+         }
+        ],
+        "results": [
+         {
+          "name": "image-digest",
+          "value": "$(tasks.build.results.image-digest)"
+         },
+         {
+          "name": "disk-digest",
+          "value": "$(tasks.disk.results.disk-digest)"
+         }
+        ]
+       }
+      }
+     },
+     "secretOwner": [
+      {
+       "apiVersion": "tekton.dev/v1",
+       "kind": "PipelineRun",
+       "name": "onb-vm-golden-check-bbbbbbbb",
+       "uid": "run-uid"
+      }
+     ]
+    },
+    "kubeWrites": [
+     "POST /api/v1/namespaces/box1-ci/secrets",
+     "POST /apis/tekton.dev/v1/namespaces/box1-ci/pipelineruns",
+     "PUT /api/v1/namespaces/box1-ci/secrets/onb-vm-golden-check-bbbbbbbb-git",
+     "DELETE /api/v1/namespaces/box1-ci/secrets/onb-vm-golden-check-bbbbbbbb-git"
+    ],
+    "stored": {
+     "phase": "IMAGE_BUILT",
+     "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "diskDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+     "pipelineName": "onb-vm-golden-check-bbbbbbbb",
+     "credentialSecret": "onb-vm-golden-check-bbbbbbbb-git"
+    },
+    "records": [
+     {
+      "schemaVersion": 2,
+      "id": "11111111-1111-4111-8111-111111111111",
+      "onboardingId": "11111111-1111-4111-8111-111111111111",
+      "name": "vm-golden-check",
+      "namespace": "vm-golden-check-dev",
+      "owner": "user:default/mike",
+      "visibility": "private",
+      "description": "Characterisation",
+      "templateVersion": "x",
+      "profile": "virtual-machine",
+      "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "sourceUrl": "https://github.com/box1-org/vm-golden-check",
+      "phase": "BUILD_RUNNING",
+      "history": [
+       {
+        "phase": "PLATFORM_READY",
+        "at": "t"
+       },
+       {
+        "phase": "BUILD_RUNNING",
+        "at": "<time>"
+       }
+      ],
+      "onboardingPR": {
+       "merged": true,
+       "mergeCommit": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "applicationsSyncedAt": "t",
+      "serviceName": "vm-golden-check",
+      "phaseStatus": "succeeded",
+      "phaseStartedAt": "<time>",
+      "lastTransitionAt": "<time>",
+      "updatedAt": "<time>",
+      "activeWaits": [],
+      "pipelineName": "onb-vm-golden-check-bbbbbbbb",
+      "credentialSecret": "onb-vm-golden-check-bbbbbbbb-git",
+      "lastSuccessfulState": "BUILD_RUNNING"
+     },
+     {
+      "schemaVersion": 2,
+      "id": "11111111-1111-4111-8111-111111111111",
+      "onboardingId": "11111111-1111-4111-8111-111111111111",
+      "name": "vm-golden-check",
+      "namespace": "vm-golden-check-dev",
+      "owner": "user:default/mike",
+      "visibility": "private",
+      "description": "Characterisation",
+      "templateVersion": "x",
+      "profile": "virtual-machine",
+      "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "sourceUrl": "https://github.com/box1-org/vm-golden-check",
+      "phase": "IMAGE_BUILT",
+      "history": [
+       {
+        "phase": "PLATFORM_READY",
+        "at": "t"
+       },
+       {
+        "phase": "BUILD_RUNNING",
+        "at": "<time>"
+       },
+       {
+        "phase": "IMAGE_BUILT",
+        "at": "<time>"
+       }
+      ],
+      "onboardingPR": {
+       "merged": true,
+       "mergeCommit": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "applicationsSyncedAt": "t",
+      "serviceName": "vm-golden-check",
+      "phaseStatus": "succeeded",
+      "phaseStartedAt": "<time>",
+      "lastTransitionAt": "<time>",
+      "updatedAt": "<time>",
+      "activeWaits": [],
+      "pipelineName": "onb-vm-golden-check-bbbbbbbb",
+      "credentialSecret": "onb-vm-golden-check-bbbbbbbb-git",
+      "lastSuccessfulState": "IMAGE_BUILT",
+      "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "diskDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+     }
+    ]
+   },
+   "buildWithoutImageDigest": {
+    "error": "Initial CI did not return an immutable image digest"
+   },
+   "buildWithoutDiskDigest": {
+    "error": "Initial CI did not return an immutable VM disk digest"
+   },
+   "resume": {
+    "afterPlatformReady": {
+     "platform": {
+      "ok": true
+     },
+     "build": {
+      "ok": true
+     },
+     "waits": [],
+     "kubeCalls": [],
+     "phase": "PLATFORM_READY"
+    },
+    "afterImageBuilt": {
+     "platform": {
+      "ok": true
+     },
+     "build": {
+      "ok": true
+     },
+     "waits": [
+      "development platform readiness"
+     ],
+     "pipelineCalls": [],
+     "phase": "PLATFORM_READY",
+     "records": [
+      "PLATFORM_READY"
+     ]
+    }
+   },
+   "promote": {
+    "first": {
+     "result": {
+      "ok": true
+     },
+     "prs": [
+      {
+       "stage": "promotion",
+       "files": {
+        "workloads/vm-golden-check/datavolume.yaml": {
+         "content": "# Root disk, imported once from the pipeline-built containerDisk. Not listed in\n# kustomization.yaml until the first promotion sets the digest: DataVolume specs are\n# immutable, so a placeholder source must never be created.\n---\napiVersion: cdi.kubevirt.io/v1beta1\nkind: DataVolume\nmetadata:\n  name: \"vm-golden-check-root\"\n  namespace: \"vm-golden-check-dev\"\n  annotations:\n    cdi.kubevirt.io/storage.bind.immediate.requested: \"false\"\nspec:\n  source:\n    registry:\n      url: docker://image-registry.openshift-image-registry.svc:5000/box1-ci/vm-golden-check-disk@sha256:2222222222222222222222222222222222222222222222222222222222222222\n      pullMethod: node\n  storage:\n    storageClassName: lvms-vg1\n    volumeMode: Block\n    accessModes: [ReadWriteOnce]\n    resources:\n      requests:\n        storage: 12Gi\n",
+         "mode": "100644"
+        },
+        "workloads/vm-golden-check/kustomization.yaml": {
+         "content": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nlabels:\n  - pairs:\n      backstage.io/kubernetes-id: vm-golden-check\n    includeSelectors: false\n    includeTemplates: false\nresources:\n  - namespace.yaml\n  - updater.yaml\n  - admin-access.yaml\n  - virtualmachine.yaml\n  - datavolume.yaml\n  - onboarding.yaml\n",
+         "mode": "100644"
+        },
+        "workloads/vm-golden-check/virtualmachine.yaml": {
+         "content": "# Halted until the first promotion records the OS image, adds datavolume.yaml to the\n# kustomization and sets runStrategy: Always. Later promotions only update the\n# box1.org/* annotations (no restart); apply them in the guest with\n# `sudo bootc upgrade --apply`.\n---\napiVersion: kubevirt.io/v1\nkind: VirtualMachine\nmetadata:\n  name: \"vm-golden-check\"\n  namespace: \"vm-golden-check-dev\"\n  annotations:\n    box1.org/os-image-digest: sha256:1111111111111111111111111111111111111111111111111111111111111111\n    box1.org/source-revision: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n    box1.org/build-pipelinerun: box1-ci/onb-vm-golden-check-bbbbbbbb\nspec:\n  runStrategy: Always\n  template:\n    metadata:\n      labels:\n        kubevirt.io/domain: \"vm-golden-check\"\n    spec:\n      accessCredentials:\n        - sshPublicKey:\n            source:\n              secret:\n                secretName: \"vm-golden-check-admin-ssh\"\n            propagationMethod:\n              qemuGuestAgent:\n                users: [cloud-user]\n      domain:\n        cpu:\n          cores: 2\n        memory:\n          guest: 4Gi\n        firmware:\n          bootloader:\n            efi:\n              secureBoot: false\n        devices:\n          autoattachSerialConsole: true\n          rng: {}\n          disks:\n            - name: root\n              bootOrder: 1\n              disk:\n                bus: virtio\n            # Read by box1-registry-setup.service as /dev/disk/by-id/virtio-<serial>.\n            - name: serviceca\n              serial: serviceca\n              disk:\n                bus: virtio\n            - name: regtoken\n              serial: regtoken\n              disk:\n                bus: virtio\n          interfaces:\n            - name: default\n              masquerade: {}\n      networks:\n        - name: default\n          pod: {}\n      volumes:\n        - name: root\n          dataVolume:\n            name: \"vm-golden-check-root\"\n        - name: serviceca\n          configMap:\n            name: openshift-service-ca.crt\n        - name: regtoken\n          secret:\n            secretName: \"vm-golden-check-updater-token\"\n",
+         "mode": "100644"
+        }
+       }
+      }
+     ],
+     "syncRequests": 1
+    },
+    "beforePlatformReady": {
+     "error": "Platform readiness has not completed; retry the same service to resume"
+    },
+    "drifted": {
+     "error": "First-release GitOps content drifted: workloads/vm-golden-check/virtualmachine.yaml"
+    },
+    "resumedAfterMerge": {
+     "result": {
+      "ok": true
+     },
+     "prCalls": 0
+    }
+   },
+   "verify": {
+    "success": {
+     "result": {
+      "ok": true
+     },
+     "waits": [
+      {
+       "label": "first VM boot with guest agent",
+       "seconds": 1500,
+       "seen": [
+        "VirtualMachine records the promoted OS digest",
+        "VirtualMachine records the promoted OS digest",
+        "root disk imported (ImportInProgress 40%)",
+        "VirtualMachine Ready",
+        "guest agent connected",
+        true
+       ]
+      }
+     ],
+     "records": [
+      {
+       "phase": "DEPLOYMENT_READY",
+       "extra": {
+        "deploymentImage": "image-registry.openshift-image-registry.svc:5000/box1-ci/vm-golden-check@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "deploymentReadyAt": "<time>"
+       }
+      }
+     ],
+     "outputs": {
+      "sourceUrl": "https://github.com/box1-org/vm-golden-check",
+      "catalogUrl": "https://developer-hub.apps.ocp.box1.org/catalog/default/component/vm-golden-check",
+      "pipelineUrl": "https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/onb-x",
+      "deploymentUrl": "https://console-openshift-console.apps.ocp.box1.org/k8s/ns/vm-golden-check-dev/kubevirt.io~v1~VirtualMachine/vm-golden-check",
+      "argoUrl": "https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/vm-golden-check",
+      "onboardingUrl": "https://github.com/box1-org/box1-workloads-dev/pull/1",
+      "statusRecord": "rhdh/box1-onboard-vm-golden-check",
+      "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+     },
+     "fetched": []
+    },
+    "withoutImage": {
+     "error": "Cannot verify deployment without an image digest"
+    },
+    "failedSync": {
+     "error": "Argo vm-golden-check sync did not complete: expected revision cccccccccccccccccccccccccccccccccccccccc, observed ffffffffffffffffffffffffffffffffffffffff, sync OutOfSync, health Degraded, operation Failed, sync failed"
+    }
+   },
+   "catalog": {
+    "complete": {
+     "result": {
+      "ok": true
+     },
+     "catalogCalls": [
+      "get component:default/vm-golden-check",
+      "add https://github.com/box1-org/vm-golden-check/tree/main/catalog-info.yaml",
+      "get component:default/vm-golden-check"
+     ],
+     "phases": [
+      "CATALOG_SUBMITTING",
+      "CATALOG_SUBMITTED",
+      "CATALOG_REGISTERING",
+      "COMPLETE"
+     ],
+     "outputs": {
+      "entityRef": "component:default/vm-golden-check",
+      "catalogInfoUrl": "https://github.com/box1-org/vm-golden-check/tree/main/catalog-info.yaml"
+     }
+    },
+    "withoutDeploymentImage": {
+     "result": {
+      "error": "Catalog completion requires a verified development deployment"
+     },
+     "catalogCalls": [],
+     "phases": [],
+     "outputs": {}
+    },
+    "withoutPromotion": {
+     "result": {
+      "error": "Catalog completion requires a verified development deployment"
+     },
+     "catalogCalls": [],
+     "phases": [],
+     "outputs": {}
+    },
+    "noRecord": {
+     "result": {
+      "error": "Catalog completion requires a verified development deployment"
+     },
+     "catalogCalls": [],
+     "phases": [],
+     "outputs": {}
+    },
+    "submitBeforeDelivery": {
+     "result": {
+      "ok": true
+     },
+     "catalogCalls": [
+      "get component:default/vm-golden-check",
+      "add https://github.com/box1-org/vm-golden-check/tree/main/catalog-info.yaml"
+     ],
+     "phase": "CATALOG_SUBMITTED"
+    }
+   }
+  }
+ },
+ "profileChecks": {
+  "unknownProfile": {
+   "error": "Unsupported onboarding profile"
+  },
+  "input=service,record=none": {
+   "provision": {
+    "ok": true
+   },
+   "promote": {
+    "error": "Platform readiness has not completed; retry the same service to resume"
+   },
+   "prs": [
+    "onboarding"
+   ]
+  },
+  "input=service,record=virtual-machine": {
+   "provision": {
+    "error": "Onboarding profile does not match the original request"
+   },
+   "promote": {
+    "error": "Onboarding profile does not match the original request"
+   },
+   "prs": []
+  },
+  "input=virtual-machine,record=none": {
+   "provision": {
+    "error": "Onboarding profile does not match the original request"
+   },
+   "promote": {
+    "error": "Onboarding profile does not match the original request"
+   },
+   "prs": []
+  }
+ },
+ "actionSchemas": [
+  {
+   "id": "box1:repository:ensure",
+   "description": "Create or resume an owned Box1 source repository",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "owner",
+      "description",
+      "visibility"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "owner": {
+       "type": "string"
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "description": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 120
+      },
+      "visibility": {
+       "type": "string",
+       "enum": [
+        "private",
+        "public"
+       ]
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "remoteUrl": {
+       "type": "string"
+      },
+      "repoContentsUrl": {
+       "type": "string"
+      },
+      "commitHash": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:development:provision",
+   "description": "Validate development onboarding, await readiness, build, promote and verify first deployment",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "sourceRevision"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "sourceRevision": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{40}$"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "sourceUrl": {
+       "type": "string"
+      },
+      "catalogUrl": {
+       "type": "string"
+      },
+      "pipelineUrl": {
+       "type": "string"
+      },
+      "deploymentUrl": {
+       "type": "string"
+      },
+      "argoUrl": {
+       "type": "string"
+      },
+      "onboardingUrl": {
+       "type": "string"
+      },
+      "statusRecord": {
+       "type": "string"
+      },
+      "imageDigest": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:development:platform",
+   "description": "Validate development onboarding, await readiness, build, promote and verify first deployment",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "sourceRevision"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "sourceRevision": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{40}$"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "sourceUrl": {
+       "type": "string"
+      },
+      "catalogUrl": {
+       "type": "string"
+      },
+      "pipelineUrl": {
+       "type": "string"
+      },
+      "deploymentUrl": {
+       "type": "string"
+      },
+      "argoUrl": {
+       "type": "string"
+      },
+      "onboardingUrl": {
+       "type": "string"
+      },
+      "statusRecord": {
+       "type": "string"
+      },
+      "imageDigest": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:development:build",
+   "description": "Validate development onboarding, await readiness, build, promote and verify first deployment",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "sourceRevision"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "sourceRevision": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{40}$"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "sourceUrl": {
+       "type": "string"
+      },
+      "catalogUrl": {
+       "type": "string"
+      },
+      "pipelineUrl": {
+       "type": "string"
+      },
+      "deploymentUrl": {
+       "type": "string"
+      },
+      "argoUrl": {
+       "type": "string"
+      },
+      "onboardingUrl": {
+       "type": "string"
+      },
+      "statusRecord": {
+       "type": "string"
+      },
+      "imageDigest": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:development:promote",
+   "description": "Validate development onboarding, await readiness, build, promote and verify first deployment",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "sourceRevision"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "sourceRevision": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{40}$"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "sourceUrl": {
+       "type": "string"
+      },
+      "catalogUrl": {
+       "type": "string"
+      },
+      "pipelineUrl": {
+       "type": "string"
+      },
+      "deploymentUrl": {
+       "type": "string"
+      },
+      "argoUrl": {
+       "type": "string"
+      },
+      "onboardingUrl": {
+       "type": "string"
+      },
+      "statusRecord": {
+       "type": "string"
+      },
+      "imageDigest": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:development:verify",
+   "description": "Validate development onboarding, await readiness, build, promote and verify first deployment",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "sourceRevision"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "sourceRevision": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{40}$"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "sourceUrl": {
+       "type": "string"
+      },
+      "catalogUrl": {
+       "type": "string"
+      },
+      "pipelineUrl": {
+       "type": "string"
+      },
+      "deploymentUrl": {
+       "type": "string"
+      },
+      "argoUrl": {
+       "type": "string"
+      },
+      "onboardingUrl": {
+       "type": "string"
+      },
+      "statusRecord": {
+       "type": "string"
+      },
+      "imageDigest": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:development:onboard",
+   "description": "Validate development onboarding, await readiness, build, promote and verify first deployment",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name",
+      "sourceRevision"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      },
+      "profile": {
+       "type": "string",
+       "enum": [
+        "service",
+        "virtual-machine"
+       ],
+       "default": "service",
+       "description": "Onboarding profile; must match the profile recorded when the repository was created"
+      },
+      "sourceRevision": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{40}$"
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "sourceUrl": {
+       "type": "string"
+      },
+      "catalogUrl": {
+       "type": "string"
+      },
+      "pipelineUrl": {
+       "type": "string"
+      },
+      "deploymentUrl": {
+       "type": "string"
+      },
+      "argoUrl": {
+       "type": "string"
+      },
+      "onboardingUrl": {
+       "type": "string"
+      },
+      "statusRecord": {
+       "type": "string"
+      },
+      "imageDigest": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:catalog:submit",
+   "description": "Submit or reuse the owned service catalog location without waiting for processing",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "entityRef": {
+       "type": "string"
+      },
+      "catalogInfoUrl": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:catalog:verify",
+   "description": "Wait for the owned service catalog entity to finish processing",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "entityRef": {
+       "type": "string"
+      },
+      "catalogInfoUrl": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "box1:catalog:ensure",
+   "description": "Register or reuse the owned service catalog entry and observe processing",
+   "schema": {
+    "input": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "name"
+     ],
+     "properties": {
+      "name": {
+       "type": "string",
+       "minLength": 3,
+       "maxLength": 35
+      }
+     }
+    },
+    "output": {
+     "type": "object",
+     "properties": {
+      "entityRef": {
+       "type": "string"
+      },
+      "catalogInfoUrl": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  }
+ ]
+}

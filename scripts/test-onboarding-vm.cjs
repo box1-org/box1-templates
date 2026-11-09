@@ -1,7 +1,7 @@
 // virtual-machine onboarding profile (box1-docs#55). Run after `npm run validate`,
 // which renders .validation/rhel-image-vm/<name>/gitops.
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const YAML=require('yaml');
-const {DELIVERY_PHASES,PROFILES,Workflow,validateVmBundle,validateBundle,validateProfile,filesAt}=require('../plugins/box1-onboarding/workflow.cjs');
+const {DELIVERY_PHASES,PROFILES,Workflow,validateVmBundle,validateBundle,validateProfile,profileInputSchema,filesAt}=require('../plugins/box1-onboarding/workflow.cjs');
 const name='vm-golden-check',ns=name+'-dev',id='0b4c4f6e-6d0a-4b9a-9c1e-2f7c3a1d5e10',sha='b'.repeat(40),digest='sha256:'+'1'.repeat(64),disk='sha256:'+'2'.repeat(64),ZERO='sha256:'+'0'.repeat(64);
 const bundleDir=path.resolve(__dirname,'../.validation/rhel-image-vm',name,'gitops');
 function workflow(kube={},profile='virtual-machine'){const outputs={};const w=new Workflow({ctx:{input:{name,sourceRevision:sha,profile},workspacePath:'unused',logger:{info(){}},output:(k,v)=>outputs[k]=v},config:{},credentials:{},kube});w.outputs=outputs;w.data={id,name,namespace:ns,sourceRevision:sha,profile};w.renew=async()=>{};w.save=async(phase,extra={})=>{w.data={...w.data,...extra,phase:phase??w.data.phase};};return w;}
@@ -11,8 +11,10 @@ const edit=(files,file,from,to)=>{const copy=structuredClone(files);const key=`w
 test('profiles: service stays the default with its original record values',()=>{
  assert.equal(validateProfile('service'),'service');assert.equal(validateProfile('virtual-machine'),'virtual-machine');
  assert.throws(()=>validateProfile('mainframe'),/Unsupported onboarding profile/);
- assert.deepEqual(PROFILES.service,{templateVersion:'1.1.0',commitMessage:'Create Quarkus service from the Box1 golden path'});
- const w=new Workflow({ctx:{input:{name},logger:{info(){}}},config:{},credentials:{},kube:{}});assert.equal(w.profile,'service');assert.equal(w.vm,false);
+ // PROFILES entries now also hold the phase handlers, so only the recorded values are compared.
+ assert.equal(PROFILES.service.templateVersion,'1.1.0');assert.equal(PROFILES.service.commitMessage,'Create Quarkus service from the Box1 golden path');
+ const w=new Workflow({ctx:{input:{name},logger:{info(){}}},config:{},credentials:{},kube:{}});assert.equal(w.profile,'service');assert.equal(w.handlers,PROFILES.service);
+ assert.deepEqual(PROFILES.service.recordFields(w),{});assert.deepEqual(PROFILES.service.markerFields(w),{});
 });
 test('a phase must run with the profile recorded for the onboarding',async()=>{
  const w=workflow();w.data.profile=undefined;await assert.rejects(w.provision(),/profile does not match/);
@@ -67,10 +69,10 @@ test('VM build barrier waits for the bootc release identity and privileged bindi
  await w.buildBarrier();assert.equal(states.at(-1),true);
 });
 test('VM platform readiness checks the updater, Group pull binding and VirtualMachine instead of a Deployment',async()=>{
- const w=workflow();const checks=w.vmPlatformChecks();
+ const w=workflow();const platformChecks=PROFILES['virtual-machine'].platformChecks;assert.equal(w.handlers.platformChecks,platformChecks);const checks=platformChecks(w);
  assert.deepEqual(Object.keys(checks),['namespace','serviceaccounts','registry_pull','registry_push','observer_rbac','pac_repository','argo_application','virtual_machine']);
  const kube={get:async p=>p.endsWith(`/rolebindings/${name}-image-puller`)?{roleRef:{name:'system:image-puller'},subjects:[{kind:'Group',name:'system:serviceaccounts:'+ns}]}:p.endsWith(`/virtualmachines/${name}`)?{spec:{runStrategy:'Halted'}}:null};
- w.kube=kube;const fresh=w.vmPlatformChecks();assert.equal(await fresh.registry_pull(),true);assert.equal(await fresh.virtual_machine(),true);assert.match(await fresh.serviceaccounts(),new RegExp(ns+'/'+name+'-updater'));
+ w.kube=kube;const fresh=platformChecks(w);assert.equal(await fresh.registry_pull(),true);assert.equal(await fresh.virtual_machine(),true);assert.match(await fresh.serviceaccounts(),new RegExp(ns+'/'+name+'-updater'));
 });
 test('VM first build runs bootc build, disk and channel as ci-bootc-release and keeps the disk digest',async()=>{
  const created=[];let run;const kube={
@@ -125,5 +127,7 @@ test('the VM template runs the same delivery phases with the virtual-machine pro
  assert.deepEqual(actions.filter(a=>a.startsWith('box1:development:')).map(operationFor),DELIVERY_PHASES);
  for(const step of steps.filter(s=>s.action.startsWith('box1:development:')||s.action==='box1:repository:ensure'))assert.equal(step.input.profile,'virtual-machine',step.id);
  assert(actions.indexOf('box1:catalog:submit')<actions.indexOf('box1:development:provision'));assert.equal(actions.at(-1),'box1:catalog:verify');
- assert.match(registered,/profile:\{type:'string',enum:\['service','virtual-machine'\]/);
+ // The profile enum is generated from the dispatch table; the Hub schema is unchanged.
+ assert.match(registered,/profile:profileInputSchema\(\)/);
+ assert.deepEqual(profileInputSchema(),{type:'string',enum:['service','virtual-machine'],default:'service',description:'Onboarding profile; must match the profile recorded when the repository was created'});
 });
