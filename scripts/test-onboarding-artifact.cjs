@@ -137,9 +137,9 @@ test('platform syncs the box1-workloads-dev index and the <name>-ci Application,
 test('build barrier: the consumer must match the merged token scope; the release identity must exist',async()=>{
   const w=workflow({get:async p=>ready[p]??null,request:async()=>({})},{data:{id,name,sourceRevision:sha,profile:'artifact',onboardingPR:{merged:true,mergeCommit:merge}}});
   const release=await source('.tekton/release.yaml');
-  w.content=await contents({[`${name}@${sha}:.tekton/release.yaml`]:release.replace(`value: ${consumer}`,'value: other-os')});
+  w.content=await contents({[`${name}@${sha}:.tekton/release.yaml`]:release.replace(`value: "${consumer}"`,'value: other-os')});
   await assert.rejects(w.buildBarrier(),/token scope must be the consumer declared in .tekton\/release.yaml/);
-  w.content=await contents({[`${name}@${sha}:.tekton/release.yaml`]:release.replace('value: Containerfile','value: ../Containerfile')});
+  w.content=await contents({[`${name}@${sha}:.tekton/release.yaml`]:release.replace('value: "Containerfile"','value: ../Containerfile')});
   await assert.rejects(w.buildBarrier(),/must declare a consumer-repository/);
   w.content=await contents({[`${name}@${sha}:.tekton/release.yaml`]:null});
   await assert.rejects(w.buildBarrier(),/has no .tekton\/release.yaml/);
@@ -166,8 +166,9 @@ test('verify: digest in box1-ci/<name>-bundle, gate recorded, consumer PR open, 
   const merged=workflow(kube,{data:structuredClone(base)});merged.github=pr({state:'closed',merged:true});await merged.verify();assert.equal(merged.data.consumerPR.state,'merged');
   const closed=workflow(kube,{data:structuredClone(base)});closed.github=pr({state:'closed',merged:false});await assert.rejects(closed.verify(),/closed without merging/);
   const current=workflow(kube,{data:{...structuredClone(base),consumerPR:{outcome:'current',url:null}}});
-  current.content=async(repo,file)=>repo===consumer&&file==='Containerfile'?`COPY --from=r/box1-ci/${name}-bundle@${digest} / /x/\n`:null;
-  await current.verify();assert.equal(current.data.consumerPR.state,'current');assert.equal(current.outputs.deploymentUrl,`https://github.com/box1-org/${consumer}/blob/main/Containerfile`);
+  current.github=async p=>{assert.equal(p,`/repos/box1-org/${consumer}`);return {default_branch:'trunk'};};
+  current.content=async(repo,file,ref)=>repo===consumer&&file==='Containerfile'&&ref==='trunk'?`COPY --from=r/box1-ci/${name}-bundle@${digest} / /x/\n`:null;
+  await current.verify();assert.equal(current.data.consumerPR.state,'current');assert.equal(current.outputs.deploymentUrl,`https://github.com/box1-org/${consumer}/blob/trunk/Containerfile`);
   const unpublished=workflow({get:async p=>p.includes('imagestreams')?{status:{tags:[{items:[{image:'sha256:'+'9'.repeat(64)}]}]}}:null},{data:structuredClone(base)});unpublished.github=pr({state:'open'});
   await assert.rejects(unpublished.verify(),/wait did not complete: bundle digest and consumer PR/);
   const ungated=workflow(kube,{data:{...structuredClone(base),gate:{enforcement:'observe',policy:'pass'}}});await assert.rejects(ungated.verify(),/not recorded as a pass in gate mode/);

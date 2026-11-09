@@ -30,9 +30,9 @@ spec:
   - name: git-auth-secret
     value: "{{git_auth_secret}}"
   - name: consumer-repository
-    value: ${{ values.consumerRepository }}
+    value: ${{ values.consumerRepository | dump }}
   - name: consumer-path
-    value: ${{ values.consumerPath }}
+    value: ${{ values.consumerPath | dump }}
   pipelineSpec:
     params:
     - name: revision
