@@ -522,12 +522,13 @@ async function artifactVerify(w) {
   const {consumer,consumerPR:pr,gate}=w.data,digest=w.data.imageDigest,bundle=`box1-ci/${w.name}-bundle`;
   check(gate?.enforcement==='gate'&&gate.policy==='pass','The security gate result is not recorded as a pass in gate mode');
   check(consumer?.repository&&pr?.outcome,'The consumer PR result is not recorded');
-  let state;
+  let state,branch='main';
   await w.wait('bundle digest and consumer PR',300,async()=>{
     const stream=await w.kube.get(`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreams/${w.name}-bundle`);
     if(!(stream?.status?.tags||[]).some(t=>(t.items||[]).some(i=>i.image===digest)))return `${bundle} holds ${digest}`;
     if(pr.outcome==='current') {
-      const file=await w.content(consumer.repository,consumer.path);
+      branch=(await w.github(`/repos/${ORG}/${consumer.repository}`))?.default_branch||'main';
+      const file=await w.content(consumer.repository,consumer.path,branch);
       check(file?.includes(`/${bundle}@${digest}`),`${ORG}/${consumer.repository} no longer pins ${bundle}@${digest} and no PR was opened`);
       state='current';return true;
     }
@@ -540,7 +541,7 @@ async function artifactVerify(w) {
   await w.save('ARTIFACT_VERIFIED',{bundleImage:`${REGISTRY}/${bundle}@${digest}`,artifactVerifiedAt:new Date().toISOString(),consumerPR:{...pr,state}});
   // The action's output keys are shared with the other profiles: deploymentUrl is where the
   // bundle is delivered (the consumer PR, or the consumer file when it already pins it).
-  const links={sourceUrl:w.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${w.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${w.data.pipelineName}`,deploymentUrl:pr.url||`https://github.com/${ORG}/${consumer.repository}/blob/main/${consumer.path}`,argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${artifactCiApplication(w)}`,onboardingUrl:w.data.onboardingPR.url,statusRecord:'rhdh/'+w.key,imageDigest:digest};
+  const links={sourceUrl:w.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${w.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${w.data.pipelineName}`,deploymentUrl:pr.url||`https://github.com/${ORG}/${consumer.repository}/blob/${branch}/${consumer.path}`,argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${artifactCiApplication(w)}`,onboardingUrl:w.data.onboardingPR.url,statusRecord:'rhdh/'+w.key,imageDigest:digest};
   for(const [key,value] of Object.entries(links))w.ctx.output(key,value);
 }
 // A published, gated bundle that was proposed to (or is already pinned by) its consumer.
