@@ -148,6 +148,9 @@ test('every table entry declares the whole handler contract',()=>{
   for(const [name,entry] of Object.entries(PROFILES)){
     for(const key of keys)assert(Object.hasOwn(entry,key),`${name} must declare ${key} (null when absent)`);
     assert.equal(typeof entry.templateVersion,'string');assert.equal(typeof entry.catalogComplete,'function');
+    // A PipelineRun build needs buildResults to read its digests; otherwise the Secret is left behind.
+    if(entry.buildSpec)assert.equal(typeof entry.buildResults,'function',`${name}: buildSpec requires buildResults`);
+    if(entry.sourceRepository!==false)assert.equal(typeof entry.commitMessage,'string',`${name}: a source repository needs a commitMessage`);
   }
   assert.deepEqual(DELIVERY_PHASES,['provision','platform','buildPhase','promote','verify']);
 });

@@ -25,12 +25,13 @@ const ZERO='sha256:'+'0'.repeat(64);
 // 'service' is the original Quarkus path and must stay byte-for-byte compatible with
 // records and markers written by earlier releases: it adds no `profile` key.
 //
-// Entry contract. `w` is the Workflow: w.name, w.ns, w.profile, w.data (the state
+// Entry contract. `w` is the Workflow: w.name, w.ns, w.key, w.profile, w.data (the state
 // record), w.kube, w.wait(label,seconds,observe), w.content(repo,file), w.save(phase,extra),
-// w.ctx.output(key,value). A handler set to null declares the phase absent.
+// w.github(path,method,body), w.checkpoint(), w.ctx.output(key,value). A handler set to null
+// declares the phase absent.
 //
 //   templateVersion   string. Stored in the record and the repository marker.
-//   commitMessage     string. Skeleton commit message in the new source repository.
+//   commitMessage     string, or null with sourceRepository:false. Skeleton commit message.
 //   sourceRepository  boolean, default true. false: the profile has no source
 //                     repository and box1:repository:ensure is refused.
 //   initialRecord(w)  async -> object | null. Only for sourceRepository:false. When no
@@ -46,7 +47,8 @@ const ZERO='sha256:'+'0'.repeat(64);
 //                     Readiness set observed alongside the build; null: none.
 //   buildSpec(w,secretName) -> PipelineRun spec | null. The first build. null: no
 //                     PipelineRun and no build credential.
-//   buildResults(w,run) -> object. Fields stored with IMAGE_BUILT (normally imageDigest).
+//   buildResults(w,run) -> object. Fields stored with IMAGE_BUILT. Must include imageDigest:
+//                     platform, buildPhase and resume treat imageDigest as "build done".
 //                     Throws to reject the results. `run` is the succeeded PipelineRun, or
 //                     null when buildSpec is null (the handler may then be async, for
 //                     example to adopt already approved digests). Both buildSpec and

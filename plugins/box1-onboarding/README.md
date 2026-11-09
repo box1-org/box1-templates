@@ -140,12 +140,13 @@ A profile is one entry in `PROFILES` (`workflow.cjs`) plus the handlers it names
 Workflow phases call the handlers and never test the profile name, so do not add
 `if (profile === …)` branches to the Workflow. The full contract is the comment above
 `PROFILES`. Every handler receives the Workflow `w`, which provides `w.name`, `w.ns`,
-`w.profile`, `w.data` (the state record), `w.kube`, `w.wait(label, seconds, observe)`,
-`w.content(repo, file)`, `w.save(phase, extra)` and `w.ctx.output(key, value)`.
+`w.key`, `w.profile`, `w.data` (the state record), `w.kube`, `w.wait(label, seconds, observe)`,
+`w.content(repo, file)`, `w.save(phase, extra)`, `w.github(path, method, body)`,
+`w.checkpoint()` and `w.ctx.output(key, value)`.
 
 | Key | Used by | Absent (`null`) means |
 | --- | --- | --- |
-| `templateVersion`, `commitMessage` | `box1:repository:ensure`: record, marker and skeleton commit | — (required) |
+| `templateVersion`, `commitMessage` | `box1:repository:ensure`: record, marker and skeleton commit | `commitMessage` may be `null` only with `sourceRepository: false` |
 | `sourceRepository` (default `true`) | `box1:repository:ensure` | `false`: the action is refused; there is no source repository |
 | `initialRecord(w)` | `box1:development:provision`, only when no record exists | the record must come from `box1:repository:ensure` |
 | `recordFields(w)`, `markerFields(w)` | the REQUESTED record (after `templateVersion`) and `.box1/onboarding.json` | — (return `{}` to add nothing) |
@@ -153,7 +154,7 @@ Workflow phases call the handlers and never test the profile name, so do not add
 | `buildBarrier(w)` | end of `platform` | no build prerequisites |
 | `platformChecks(w)` | readiness observed during `build`; `{condition: async () => true or 'pending reason'}` | no readiness set |
 | `buildSpec(w, secretName)` | `build`: the first PipelineRun spec | no PipelineRun or build credential |
-| `buildResults(w, run)` | `build`: fields saved with IMAGE_BUILT; throw to reject. `run` is `null` without `buildSpec` | with `buildSpec` also `null`: no build at all |
+| `buildResults(w, run)` | `build`: fields saved with IMAGE_BUILT, which must include `imageDigest` (resume treats it as "build done"); throw to reject. `run` is `null` without `buildSpec`. Required when `buildSpec` is set | with `buildSpec` also `null`: no build at all |
 | `promotionUpdates(w, files)` | `promote`: files of the first-release PR in `box1-workloads-dev` | no promotion PR or promotion sync |
 | `verify(w)` | `verify`: wait for the delivered state, save, set outputs | nothing to verify |
 | `catalogComplete(data)` | `box1:catalog:ensure` | — (required) |
@@ -172,6 +173,16 @@ Rules:
   checks, verify sequence and action schemas with
   `scripts/fixtures/onboarding-profiles-characterisation.json`, recorded on 1.2.0. Do
   not regenerate the fixture to make a change pass.
+- Known limits of 1.3.0 that a new profile may have to extend in the Workflow itself
+  (add a handler rather than a profile-name branch):
+  - with a non-null `validateBundle`, `platform` and `build` sync and wait for the
+    Argo Application named `<name>` (`requestServiceSync`, `awaitServiceSync`);
+  - `promotionUpdates` can only produce a promotion PR in `box1-workloads-dev`;
+  - `box1:catalog:submit`/`verify`/`ensure` always register `component:default/<name>`
+    from `github.com/box1-org/<name>/…/catalog-info.yaml`;
+  - with `sourceRepository: false` the record is created by `provision`, so the
+    template must run the catalog steps after `provision`: `catalogSubmit` on a missing
+    record would create an incomplete one.
 - Add the profile's tests next to `scripts/test-onboarding-profiles.cjs`, which shows
   test-only profiles without a GitOps workload and without a source repository.
 - Templates pass `profile: <name>` to every onboarding step. Releasing the plugin is
