@@ -56,6 +56,30 @@ Initial acceptance evidence is recorded in [VERIFICATION.md](VERIFICATION.md).
 The requested orders-service creation, redeployment, and rollback demonstration
 is recorded in [MILESTONE-DEMO.md](MILESTONE-DEMO.md).
 
+### `rhel-image-vm`: optional cloud-init (`cloudInit`)
+
+`cloudInit` (default `false`, box1-docs#140) installs cloud-init in the OS image,
+restricted to the NoCloud datasource (`datasource_list: [ NoCloud, None ]`). It
+lets one image boot as several VM instances: an instance VM that attaches a
+`cloudinitdisk` volume with `cloudInitNoCloud.secretRef` gets its site
+configuration and machine credential as files. The image configuration
+(`skeleton/{% if ... %}rootfs-cloud-init{% endif %}/`, copied only when the
+parameter is on) runs only `write_files`, on every boot, with networking and
+vendor-data disabled. Accounts, SSH keys, passwords, disks and packages stay with
+the image, qemu-guest-agent and bootc; `sshd-keygen` keeps generating host keys.
+These module lists shape what Box1-generated user-data does; they are not a
+security boundary, because user-data can override them. Write access to an
+instance's cloud-init Secret is root in that guest.
+The GitOps bundle this template generates is the same either way; the VM it
+creates boots without a NoCloud disk. Instance bundles come from the `vm-instance`
+profile (box1-docs#138). The Secret is assembled outside Git with the box1-docs
+runbook `runbooks/vm-cloud-init-identity.md`.
+
+With the parameter off, the rendered repository must be byte-identical to the
+template before the parameter existed. `npm run validate` checks that off and
+omitted render the same; to compare with a revision, run
+`VM_BASELINE_REF=origin/main npm run validate` (or any other Git ref).
+
 Maintain changes through PRs and retest a generated project when updating the
 Quarkus BOM, runtime digest, plugin versions, pipeline contract, or manifests.
 Java package/group `org.box1` and the lab ingress/registry are deliberately fixed.

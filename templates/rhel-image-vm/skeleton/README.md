@@ -47,7 +47,8 @@ Releases never reboot the VM on their own: `bootc-fetch-apply-updates.timer` is 
 | --- | --- |
 | VM, disk and access (desired state) | `box1-org/box1-workloads-dev`: `workloads/${{ values.name }}/`, synced by Argo CD Application `${{ values.name }}` |
 | OS images | `box1-ci/${{ values.name }}` (update channel `:development`) and `box1-ci/${{ values.name }}-disk` |
-| Registry access for `bootc upgrade` | At boot, `box1-registry-setup.service` installs the service CA and a pull token from two VM disks (`serviceca`, `regtoken`) |
+| Registry access for `bootc upgrade` | At boot, `box1-registry-setup.service` installs the service CA and a pull token from two VM disks (`serviceca`, `regtoken`) |{% if values.cloudInit === true %}
+| Per-instance identity (cloud-init) | Optional. A VM with a `cloudinitdisk` NoCloud volume (`secretRef: <instance>-cloud-init`) gets `/etc/box1/site.env` (0644) and `/etc/box1/credentials/keycloak-client-secret` (0400, user `box1-site`), rewritten at every boot. Without the disk, cloud-init writes nothing. `rootfs-cloud-init/` holds its configuration, which runs only `write_files`; treat write access to the Secret as root in the guest. See box1-docs `runbooks/vm-cloud-init-identity.md` |{% endif %}
 | Shared build tasks | `box1-org/box1-gitops`: `platform/pipelines/tasks/bootc-*.yaml`; see `GOLDEN-PATH.md` |
 
 ## Build locally (Apple Silicon)

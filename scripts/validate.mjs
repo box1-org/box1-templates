@@ -24,7 +24,10 @@ function renderTree(from, to, values) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
     const src = path.join(from, entry.name);
-    const dest = path.join(to, env.renderString(entry.name, { values }));
+    const rendered = env.renderString(entry.name, { values });
+    // Like Backstage fetch:template, a name that renders empty skips the entry (conditional files).
+    if (rendered === '') continue;
+    const dest = path.join(to, rendered);
     if (entry.isDirectory()) renderTree(src, dest, values);
     else {
       const text = env.renderString(fs.readFileSync(src, 'utf8'), { values });
@@ -277,7 +280,90 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
     }
     console.log(`PASS rhel-image-vm ${name}: render, plugin bundle check, Kustomize, Containerfile, pipeline contract, catalog${actionsFile ? ', installed actions' : ''}`);
   }
+  // cloudInit (box1-docs#140). The renders above use the values main's template passed
+  // (no cloudInit key). cloudInit: false must reproduce them byte for byte; cloudInit: true
+  // may change only the OS image definition, never the GitOps bundle.
+  const snapshot = dir => Object.fromEntries(fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter(e => e.isFile()).map(e => {
+    const file = path.join(e.parentPath ?? e.path, e.name);
+    return [path.relative(dir, file), { mode: fs.statSync(file).mode, content: fs.readFileSync(file, 'utf8') }];
+  }));
+  const vmValues = (name, extra) => {
+    const parameters = { name, description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike', visibility: 'private', adminSshPublicKey: key, cpuCores: 2, memory: '4Gi', rootDiskSize: '12Gi', extraPackages: '', ...extra };
+    assert(checkVmForm(parameters), JSON.stringify(checkVmForm.errors));
+    return { ...parameters, namespace: name + '-dev', sourceRevision: 'b'.repeat(40) };
+  };
+  const renderVm = (dir, values) => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    renderTree(path.join(vmSource, 'skeleton'), path.join(dir, 'application'), values);
+    renderTree(path.join(vmSource, 'gitops'), path.join(dir, 'gitops'), values);
+    return snapshot(dir);
+  };
+  // VM_BASELINE_REF=origin/main also renders that revision's template (e.g. the one before
+  // the parameter existed) and requires cloudInit: false to reproduce it byte for byte.
+  const baselineRef = process.env.VM_BASELINE_REF;
+  let baselineSource;
+  if (baselineRef) {
+    const extract = path.join(root, '.validation/rhel-image-vm-baseline-source');
+    fs.rmSync(extract, { recursive: true, force: true });
+    fs.mkdirSync(extract, { recursive: true });
+    const archive = execFileSync('git', ['-C', root, 'archive', '--format=tar', baselineRef, 'templates/rhel-image-vm'], { maxBuffer: 64 << 20 });
+    execFileSync('tar', ['-x', '-C', extract], { input: archive });
+    baselineSource = path.join(extract, 'templates/rhel-image-vm');
+  }
+  for (const [name, extra] of [['vm-golden-check', {}], ['erp-appliance', { cpuCores: 4, memory: '8Gi', rootDiskSize: '20Gi', extraPackages: 'python3-pip sqlite' }], ['v'.repeat(35), {}]]) {
+    if (baselineSource) {
+      const dir = path.join(root, '.validation/rhel-image-vm-baseline', name), values = vmValues(name, extra);
+      fs.rmSync(dir, { recursive: true, force: true });
+      renderTree(path.join(baselineSource, 'skeleton'), path.join(dir, 'application'), values);
+      renderTree(path.join(baselineSource, 'gitops'), path.join(dir, 'gitops'), values);
+      assert.deepEqual(renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-off', name), { ...values, cloudInit: false }), snapshot(dir), `cloudInit: false must render ${name} byte-identical to ${baselineRef}`);
+    }
+    const off = renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-off', name), { ...vmValues(name, extra), cloudInit: false });
+    assert.deepEqual(off, snapshot(path.join(root, '.validation/rhel-image-vm', name)), `cloudInit: false must render ${name} byte-identical to the template without the parameter`);
+    for (const [file, { content }] of Object.entries(off)) assert(!/cloud-init|cloudinit|nocloud|box1-site|\/etc\/cloud/i.test(content), `cloudInit: false leaked cloud-init content into ${file}`);
+  }
+  {
+    const name = 'site-gateway-os';
+    const off = renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-off', name), { ...vmValues(name, {}), cloudInit: false });
+    const target = path.join(root, '.validation/rhel-image-vm-cloudinit-on', name);
+    const on = renderVm(target, { ...vmValues(name, { cloudInit: true, extraPackages: 'java-21-openjdk-headless' }), cloudInit: true });
+    const offExtra = renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-off', name + '-extra'), { ...vmValues(name, { extraPackages: 'java-21-openjdk-headless' }), cloudInit: false });
+    const extraRoot = 'application/rootfs-cloud-init/';
+    const cfgPath = extraRoot + 'etc/cloud/cloud.cfg.d/90-box1.cfg', usersPath = extraRoot + 'usr/lib/sysusers.d/box1-site.conf';
+    const tmpfilesPath = extraRoot + 'usr/lib/tmpfiles.d/box1-site.conf', keygenPath = extraRoot + 'usr/lib/systemd/system/sshd-keygen@.service.d/zz-box1-keygen.conf';
+    assert.deepEqual(Object.keys(on).filter(f => !(f in offExtra)).sort(), [cfgPath, keygenPath, usersPath, tmpfilesPath].sort(), 'cloudInit: true adds only rootfs-cloud-init/');
+    assert.deepEqual(Object.keys(offExtra).filter(f => !(f in on)), [], 'cloudInit: true must not remove files');
+    assert.deepEqual(Object.keys(offExtra).filter(f => offExtra[f].content !== on[f].content).sort(), ['application/Containerfile', 'application/README.md'], 'cloudInit: true changes only the Containerfile and README');
+    for (const [file, value] of Object.entries(off)) if (file.startsWith('gitops/')) assert.deepEqual(on[file], value, `cloudInit must not change the GitOps bundle (${file})`);
+    // The template's own VM boots without a NoCloud disk: the bundle and its plugin gate are unchanged.
+    validateVmBundle(await filesAt(path.join(target, 'gitops')), name);
+    const containerfile = on['application/Containerfile'].content;
+    assert.match(containerfile, /^        qemu-guest-agent cloud-init java-21-openjdk-headless \\$/m, 'cloud-init is installed with the image packages');
+    for (const required of ['rpm -q cloud-init', 'systemctl enable $unit.service', 'systemctl is-enabled cloud-init-local.service cloud-final.service', '"NoCloud", "None"', 'test ! -e /etc/box1 ', 'COPY rootfs-cloud-init/ /', 'systemd-sysusers --dry-run /usr/lib/sysusers.d/box1-site.conf', 'systemctl disable bootc-fetch-apply-updates.timer', 'setsebool -P virt_qemu_ga_manage_ssh on']) assert(containerfile.includes(required), `cloudInit Containerfile must include ${required}`);
+    assert(containerfile.indexOf('rpm -q cloud-init') < containerfile.indexOf('bootc container lint'), 'cloud-init checks run before bootc container lint');
+    assert(on[cfgPath].mode & 0o444 && !(on[cfgPath].mode & 0o111), 'cloud-init configuration is a plain readable file');
+    const cfg = YAML.parse(on[cfgPath].content);
+    assert.deepEqual(cfg, {
+      datasource_list: ['NoCloud', 'None'], network: { config: 'disabled' }, users: [], ssh_pwauth: false, allow_public_ssh_keys: false,
+      vendor_data: { enabled: false }, cloud_init_modules: [['write_files', 'always']], cloud_config_modules: [], cloud_final_modules: [],
+    }, 'cloud-init may only write files');
+    // cloud-init's sshd-keygen drop-in must not stop host key generation, and keys are never regenerated.
+    assert.match(on[keygenPath].content, /^\[Unit\]\nConditionPathExists=\nConditionFileNotEmpty=\|!\/etc\/ssh\/ssh_host_%i_key\n$/m, 'sshd-keygen override resets conditions and restores the stock one');
+    assert.match(on[tmpfilesPath].content, /^d \/etc\/box1\/credentials 0750 root box1-site - -$/m, 'credential directory is root:box1-site 0750');
+    assert.match(on[usersPath].content, /^u\s+box1-site\s+-\s+"Box1 site services"\s+-\s+\/usr\/sbin\/nologin$/m, 'box1-site is a system user without a login shell');
+    assert(!/BEGIN|PRIVATE|password:|secret:/i.test(on[cfgPath].content + on[usersPath].content), 'No credential material in the image');
+    console.log(`PASS rhel-image-vm cloudInit: off renders byte-identical for every case${baselineRef ? ` and to ${baselineRef}` : ''}; on changes only the image (rootfs-cloud-init/, Containerfile, README), GitOps bundle unchanged and accepted by the plugin gate`);
+  }
+  assert.equal(vmTemplate.spec.parameters[0].properties.cloudInit.default, false, 'cloudInit stays opt-in');
+  assert.equal(vmTemplate.spec.steps.find(s => s.id === 'fetchApplication').input.values.cloudInit, '${{ parameters.cloudInit }}');
+  assert(!('cloudInit' in vmTemplate.spec.steps.find(s => s.id === 'fetchGitops').input.values), 'cloudInit must not reach the GitOps bundle');
   const base = { name: 'vm-golden-check', description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike', visibility: 'private', adminSshPublicKey: key };
+  for (const cloudInit of ['true', 1, null]) assert(!checkVmForm({ ...base, cloudInit }), `Accepted a non-boolean cloudInit: ${cloudInit}`);
+  // Fail safe: anything but boolean true (for example the string "false" or "true") renders the parameter off.
+  for (const cloudInit of ['true', 'false', 1]) {
+    const name = 'vm-golden-check';
+    assert.deepEqual(renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-nonbool', name), { ...vmValues(name, {}), cloudInit }), snapshot(path.join(root, '.validation/rhel-image-vm', name)), `cloudInit ${JSON.stringify(cloudInit)} must render off`);
+  }
   for (const adminSshPublicKey of ['', 'not-a-key', key + '\nssh-ed25519 AAAA second', '-----BEGIN OPENSSH PRIVATE KEY-----']) assert(!checkVmForm({ ...base, adminSshPublicKey }), 'Accepted invalid SSH public key');
   for (const extraPackages of ['vim; rm -rf /', '$(id)', 'Vim', 'a  b', ' leading']) assert(!checkVmForm({ ...base, extraPackages }), `Accepted unsafe package list: ${extraPackages}`);
   for (const name of ['box1-vm', 'quarkus-reference', 'Upper', 'a'.repeat(36)]) assert(!checkVmForm({ ...base, name }), `Accepted unsafe VM name: ${name}`);
