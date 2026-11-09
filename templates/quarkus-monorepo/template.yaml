@@ -1,0 +1,180 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: quarkus-monorepo
+  title: Create Quarkus Multi-Module Repository
+  description: Code-only Java 21 Quarkus repository with several modules. Merges to main publish a scanned OCI bundle by digest and propose it to a consumer repository; nothing is deployed.
+  tags: [quarkus, java, maven, tekton, oci-bundle, golden-path]
+  annotations:
+    box1.org/template-version: "1.0.0"
+spec:
+  owner: user:default/mike
+  type: library
+  parameters:
+    - title: Repository details
+      required: [name, description, owner, visibility, modules, consumerRepository, consumerPath]
+      properties:
+        name:
+          title: Repository name
+          type: string
+          minLength: 3
+          maxLength: 35
+          pattern: '^(?!quarkus-reference$)(?!orders-service$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: Creates the repository and the bundle image box1-ci/<name>-bundle. No namespace or deployment is created.
+        description:
+          title: Description
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 .,!?()/_-]*$'
+          default: Quarkus modules shipped as an OCI bundle
+        owner:
+          title: Catalog owner
+          type: string
+          default: user:default/mike
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        visibility:
+          title: Repository visibility
+          type: string
+          enum: [private, public]
+          default: public
+        modules:
+          title: Modules
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          default: [gateway, ops, simulator]
+          description: One Maven module and Quarkus application per entry. Each is packaged as /<module>/quarkus-app/ in the bundle.
+          items:
+            type: string
+            # A Java package segment and a top-level directory: no Java keywords and no
+            # names the parent skeleton uses (config, docs, target, src).
+            pattern: '^(?!(?:abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while|true|false|null|record|var|yield|config|docs|target|src)$)[a-z][a-z0-9]{1,19}$'
+        consumerRepository:
+          title: Consumer repository
+          type: string
+          minLength: 3
+          maxLength: 40
+          pattern: '^(?!box1-gitops$)(?!box1-workloads-dev$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: The box1-org repository whose build copies the bundle in, for example site-gateway-os. Every gated release opens a digest-bump PR there; it is never merged automatically.
+        consumerPath:
+          title: Consumer file
+          type: string
+          maxLength: 200
+          pattern: '^(?!/)(?!.*(?:^|/)\.\.?(?:/|$))[A-Za-z0-9._/-]{1,200}$'
+          default: Containerfile
+          description: File in the consumer repository holding exactly one COPY --from=.../box1-ci/<name>-bundle@sha256:<digest> line.
+  steps:
+    - id: fetchApplication
+      name: Generate the parent POM, documentation and pipelines
+      action: fetch:template
+      input:
+        url: ./skeleton
+        targetPath: application
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          modules: ${{ parameters.modules }}
+          consumerRepository: ${{ parameters.consumerRepository }}
+          consumerPath: ${{ parameters.consumerPath }}
+    - id: fetchModules
+      name: Generate one Quarkus module per entry
+      each: ${{ parameters.modules }}
+      action: fetch:template
+      input:
+        url: ./module
+        targetPath: application/${{ each.value }}
+        values:
+          name: ${{ parameters.name }}
+          module: ${{ each.value }}
+    - id: publish
+      name: Create or resume source repository
+      action: box1:repository:ensure
+      input:
+        name: ${{ parameters.name }}
+        description: ${{ parameters.description }}
+        owner: ${{ parameters.owner }}
+        visibility: ${{ parameters.visibility }}
+        profile: artifact
+    - id: fetchGitops
+      name: Generate the CI onboarding configuration
+      action: fetch:template
+      input:
+        url: ./gitops
+        targetPath: gitops
+        values:
+          name: ${{ parameters.name }}
+          consumerRepository: ${{ parameters.consumerRepository }}
+    - id: catalogSubmit
+      name: Submit the repository to the catalog
+      action: box1:catalog:submit
+      input:
+        name: ${{ parameters.name }}
+    - id: provision
+      name: Merge the CI onboarding (ci/ only, no workload)
+      action: box1:development:provision
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: artifact
+    - id: platform
+      name: Sync the CI Application and wait for the release identity
+      action: box1:development:platform
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: artifact
+    - id: build
+      name: Build, gate and propose the first bundle
+      action: box1:development:build
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: artifact
+    - id: promote
+      name: Record that there is no workload promotion
+      action: box1:development:promote
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: artifact
+    - id: verify
+      name: Verify the bundle digest, gate result and consumer PR
+      action: box1:development:verify
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.publish.output.commitHash }}
+        profile: artifact
+    - id: catalogVerify
+      name: Verify catalog processing
+      action: box1:catalog:verify
+      input:
+        name: ${{ parameters.name }}
+  output:
+    links:
+      - title: Source repository
+        url: ${{ steps.verify.output.sourceUrl }}
+      - title: Repository in catalog
+        icon: catalog
+        entityRef: component:default/${{ parameters.name }}
+      - title: First bundle build, gate and consumer PR
+        url: ${{ steps.verify.output.pipelineUrl }}
+      - title: Consumer digest-bump PR
+        url: ${{ steps.verify.output.deploymentUrl }}
+      - title: CI Argo CD Application
+        url: ${{ steps.verify.output.argoUrl }}
+      - title: Validated CI onboarding PR
+        url: ${{ steps.verify.output.onboardingUrl }}
+    text:
+      - title: Bundle published and proposed
+        content: |
+          The first bundle was built, passed the security gate and is published by digest
+          (${{ steps.verify.output.imageDigest }}). It was proposed to
+          ${{ parameters.consumerRepository }}; review and merge that PR there.
+          Every merge to main repeats this. No namespace or deployment exists for this repository.
+          Onboarding status record: ${{ steps.verify.output.statusRecord }}.

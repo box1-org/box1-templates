@@ -59,6 +59,14 @@ const ZERO='sha256:'+'0'.repeat(64);
 //                     (or the profile's equivalent) and sets the task outputs.
 //   catalogComplete(data) -> boolean. Precondition of box1:catalog:ensure, evaluated
 //                     against the stored record of the profile it names.
+//
+// Optional keys (1.4.0, box1-docs#137). Absent means the 1.3.0 behaviour, so the
+// service and virtual-machine entries do not declare them:
+//   gitopsApplication(w) -> string. The Argo Application the onboarding PR creates,
+//                     which platform syncs and awaits and promote syncs. Default: w.name.
+//   buildCredential(w) -> {repositories, permissions}. The GitHub App installation token
+//                     request for the first build's credential Secret. Default: the source
+//                     repository with contents:read.
 const PROFILES={
   service:{
     templateVersion:'1.1.0',commitMessage:'Create Quarkus service from the Box1 golden path',
@@ -73,6 +81,16 @@ const PROFILES={
     validateBundle:validateVmBundle,buildBarrier:vmBuildBarrier,platformChecks:vmPlatformChecks,
     buildSpec:vmBuildSpec,buildResults:vmBuildResults,
     promotionUpdates:vmPromotionUpdates,verify:vmVerify,catalogComplete:deploymentComplete,
+  },
+  // Code-only multi-module Maven repository (box1-docs#137): no namespace, workload or
+  // workload Application. Publishes box1-ci/<name>-bundle and proposes it to a consumer.
+  artifact:{
+    templateVersion:'1.0.0',commitMessage:'Create Quarkus multi-module repository from the Box1 golden path',
+    recordFields:w=>({profile:w.profile}),markerFields:w=>({profile:w.profile}),
+    validateBundle:validateArtifactBundle,buildBarrier:artifactBuildBarrier,platformChecks:artifactPlatformChecks,
+    buildSpec:artifactBuildSpec,buildResults:artifactBuildResults,
+    promotionUpdates:null,verify:artifactVerify,catalogComplete:artifactComplete,
+    gitopsApplication:artifactCiApplication,buildCredential:artifactBuildCredential,
   },
 };
 function validateProfile(profile) { check(Object.hasOwn(PROFILES,profile),'Unsupported onboarding profile'); return profile; }
@@ -379,6 +397,154 @@ function vmBuildResults(w, run) {
   check(/^sha256:[a-f0-9]{64}$/.test(diskDigest)&&diskDigest!==ZERO,'Initial CI did not return an immutable VM disk digest');
   return {imageDigest,diskDigest};
 }
+// artifact profile (box1-docs#137) ------------------------------------------------------
+// The onboarding PR adds ci/<name>/ (PaC Repository, release ServiceAccount, ImageStream
+// <name>-bundle and its push Role and RoleBinding, all in box1-ci) and the Application
+// applications/<name>-ci.yaml. The first build is the release Pipeline itself:
+// box1-maven-bundle -> box1-security-gates (gate) -> box1-bundle-consumer-pr. There is no
+// promotion in box1-workloads-dev; the consumer digest-bump PR takes its place.
+const REGISTRY='image-registry.openshift-image-registry.svc:5000';
+const ARTIFACT_CONSUMER=/^(?!box1-gitops$)(?!box1-workloads-dev$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const ARTIFACT_CONSUMER_PATH=/^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/;
+const ARTIFACT_PUSH_RULES=name=>[{apiGroups:['','image.openshift.io'],resources:['imagestreams/layers'],resourceNames:[name+'-bundle'],verbs:['get','update']}];
+function artifactCiApplication(w) { return w.name+'-ci'; }
+// The consumer named by a ci/<name>/ PaC Repository: its only token scope.
+function artifactScopeConsumer(repository, name) {
+  const scope=repository?.spec?.settings?.github_app_token_scope_repos;
+  check(Array.isArray(scope)&&scope.length===1&&typeof scope[0]==='string'&&scope[0].startsWith(ORG+'/'),'The PaC Repository must scope its token to exactly one box1-org consumer repository');
+  const consumer=scope[0].slice(ORG.length+1);
+  check(ARTIFACT_CONSUMER.test(consumer)&&consumer!==name,'The consumer must be another box1-org repository, never box1-gitops or box1-workloads-dev');
+  return consumer;
+}
+// Mirrors the ci/<repo>/ rule of box1-gitops-validate (box1-docs#139), narrowed to the
+// exact resources this profile generates.
+function validateArtifactBundle(files, name) {
+  validateName(name);
+  const base=`ci/${name}/`,app=`applications/${name}-ci.yaml`;
+  check(same(Object.keys(files).sort(),[app,base+'kustomization.yaml',base+'release.yaml',base+'repository.yaml'].sort()),'Artifact onboarding must add only applications/<name>-ci.yaml and ci/<name>/{kustomization,repository,release}.yaml');
+  const k=YAML.parse(files[base+'kustomization.yaml'].content);
+  check(same(k.resources,['repository.yaml','release.yaml'])&&Object.keys(k).every(key=>['apiVersion','kind','resources'].includes(key)),'Invalid ci/<name> Kustomization: only repository.yaml and release.yaml, no namespace, patches or generators');
+  const objects=[app,base+'repository.yaml',base+'release.yaml'].flatMap(file=>YAML.parseAllDocuments(files[file].content).map(d=>({file,obj:d.toJSON()}))).filter(({obj})=>obj);
+  const seen={};
+  for(const {file,obj} of objects) {
+    const m=obj.metadata;
+    check(m&&!m.generateName&&!m.ownerReferences&&!m.finalizers,'Invalid generated metadata');
+    seen[obj.kind]=(seen[obj.kind]||0)+1;
+    if(obj.kind==='Application') {
+      const sync=obj.spec?.syncPolicy;
+      check(file===app&&obj.apiVersion==='argoproj.io/v1alpha1'&&m.name===name+'-ci'&&m.namespace==='openshift-gitops'&&obj.spec.project==='default'&&!obj.spec.sources&&obj.spec.destination?.namespace==='box1-ci'&&obj.spec.destination.server==='https://kubernetes.default.svc'&&obj.spec.source?.repoURL==='https://github.com/box1-org/box1-workloads-dev.git'&&obj.spec.source.path===`ci/${name}`&&obj.spec.source.targetRevision==='main'&&!sync?.automated?.prune,'The CI Application must be <name>-ci, track ci/<name> on main and target box1-ci without pruning');
+      continue;
+    }
+    check(file!==app&&m.namespace==='box1-ci','CI bundle resources must be in box1-ci');
+    if(obj.kind==='Repository') {
+      check(obj.apiVersion==='pipelinesascode.tekton.dev/v1alpha1'&&m.name===name&&obj.spec?.url===`https://github.com/${ORG}/${name}`&&Object.keys(obj.spec).every(key=>['url','concurrency_limit','settings'].includes(key))&&Object.keys(obj.spec.settings||{}).every(key=>['pipelinerun_provenance','github_app_token_scope_repos'].includes(key))&&obj.spec.settings.pipelinerun_provenance==='default_branch','Invalid PAC Repository: url, concurrency_limit and settings (default_branch provenance, token scope) only');
+      artifactScopeConsumer(obj,name);
+    } else if(obj.kind==='ServiceAccount') check(obj.apiVersion==='v1'&&m.name===name+'-release','Only the <name>-release ServiceAccount may be created');
+    else if(obj.kind==='ImageStream') check(obj.apiVersion==='image.openshift.io/v1'&&m.name===name+'-bundle','Only the <name>-bundle ImageStream may be created');
+    else if(obj.kind==='Role') check(obj.apiVersion==='rbac.authorization.k8s.io/v1'&&m.name===name+'-bundle-push'&&same(obj.rules,ARTIFACT_PUSH_RULES(name)),'The push Role may only get and update imagestreams/layers of <name>-bundle');
+    else if(obj.kind==='RoleBinding') check(obj.apiVersion==='rbac.authorization.k8s.io/v1'&&m.name===name+'-bundle-push'&&same(obj.roleRef,{apiGroup:'rbac.authorization.k8s.io',kind:'Role',name:name+'-bundle-push'})&&same(obj.subjects,[{kind:'ServiceAccount',name:name+'-release',namespace:'box1-ci'}]),'The push RoleBinding must bind <name>-bundle-push to <name>-release only');
+    else throw new Error('Unexpected generated resource for an artifact repository: '+obj.kind);
+  }
+  for(const kind of ['Application','Repository','ServiceAccount','ImageStream','Role','RoleBinding']) check(seen[kind]===1,'Artifact onboarding needs exactly one '+kind);
+  return files;
+}
+// The consumer is declared in the source repository's .tekton/release.yaml (params
+// consumer-repository and consumer-path), and the merged ci/<name> Repository must scope
+// its token to exactly that repository. Stored once in the record as `consumer`.
+async function artifactConsumer(w) {
+  if(w.data.consumer) return w.data.consumer;
+  const release=await w.content(w.name,'.tekton/release.yaml',w.data.sourceRevision);
+  check(release,'The source revision has no .tekton/release.yaml');
+  const run=YAML.parseAllDocuments(release).map(d=>d.toJSON()).find(d=>d?.kind==='PipelineRun');
+  const params=Object.fromEntries((run?.spec?.params||[]).map(p=>[p.name,p.value]));
+  const consumer={repository:params['consumer-repository'],path:params['consumer-path']};
+  check(typeof consumer.repository==='string'&&ARTIFACT_CONSUMER.test(consumer.repository)&&consumer.repository!==w.name&&typeof consumer.path==='string'&&ARTIFACT_CONSUMER_PATH.test(consumer.path),'.tekton/release.yaml must declare a consumer-repository (another box1-org repository) and a relative consumer-path');
+  const merged=await w.content('box1-workloads-dev',`ci/${w.name}/repository.yaml`,w.data.onboardingPR?.mergeCommit||'main');
+  check(merged,`ci/${w.name}/repository.yaml is not in box1-workloads-dev`);
+  const repository=YAML.parseAllDocuments(merged).map(d=>d.toJSON()).find(d=>d?.kind==='Repository');
+  check(artifactScopeConsumer(repository,w.name)===consumer.repository,'The PaC Repository token scope must be the consumer declared in .tekton/release.yaml');
+  await w.save(null,{consumer});
+  return consumer;
+}
+function artifactBuildCredential(w) {
+  check(w.data?.consumer?.repository,'The consumer repository is not recorded; run box1:development:platform first');
+  // The consumer PR task creates a branch, a commit and a PR in the consumer only.
+  return {repositories:[w.name,w.data.consumer.repository],permissions:{contents:'write',pull_requests:'write'}};
+}
+async function artifactBuildBarrier(w) {
+  await artifactConsumer(w);
+  const rbac='/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci';
+  await w.wait('initial bundle build prerequisites',300,async()=>{
+    const [serviceAccount,push,stream]=await Promise.all([
+      w.kube.get(`/api/v1/namespaces/box1-ci/serviceaccounts/${w.name}-release`),
+      w.kube.get(`${rbac}/rolebindings/${w.name}-bundle-push`),
+      w.kube.get(`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreams/${w.name}-bundle`),
+    ]);
+    if(!serviceAccount)return `box1-ci/${w.name}-release ServiceAccount`;
+    if(push?.roleRef?.kind!=='Role'||push.roleRef.name!==w.name+'-bundle-push'||!push.subjects?.some(s=>s.kind==='ServiceAccount'&&s.name===w.name+'-release'&&s.namespace==='box1-ci'))return 'bundle registry push permission';
+    if(!stream)return `box1-ci/${w.name}-bundle ImageStream`;
+    return true;
+  });
+}
+function artifactPlatformChecks(w) {
+  const rbac='/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci';
+  return {
+    release_identity:async()=>await w.kube.get(`/api/v1/namespaces/box1-ci/serviceaccounts/${w.name}-release`)?true:`box1-ci/${w.name}-release ServiceAccount`,
+    registry_push:async()=>{const [role,binding]=await Promise.all([w.kube.get(`${rbac}/roles/${w.name}-bundle-push`),w.kube.get(`${rbac}/rolebindings/${w.name}-bundle-push`)]);return role&&binding?.roleRef?.name===role.metadata.name&&binding.subjects?.some(s=>s.name===w.name+'-release'&&s.namespace==='box1-ci')||'bundle registry push permission';},
+    bundle_imagestream:async()=>await w.kube.get(`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreams/${w.name}-bundle`)?true:`box1-ci/${w.name}-bundle ImageStream`,
+    pac_repository:async()=>{const v=await w.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+w.name);return v?.spec?.url===`https://github.com/${ORG}/${w.name}`&&same(v.spec.settings?.github_app_token_scope_repos,[ORG+'/'+w.data.consumer?.repository])||'PAC Repository registration scoped to the consumer';},
+    argo_application:async()=>{const v=await w.kube.get(APPS+'/'+artifactCiApplication(w));return v?.spec?.destination?.namespace==='box1-ci'&&v.status?.sync?.status==='Synced'||`Argo CD Application ${artifactCiApplication(w)} Synced in box1-ci`;},
+  };
+}
+// The same three Tasks as the generated .tekton/release.yaml, run as <name>-release.
+function artifactBuildSpec(w, secretName) {
+  const consumer=w.data.consumer;
+  check(consumer?.repository&&consumer.path,'The consumer is not recorded; run box1:development:platform first');
+  const task=(name,taskName,params,runAfter)=>({name,...(runAfter?{runAfter:[runAfter]}:{}),taskRef:{resolver:'cluster',params:[{name:'kind',value:'task'},{name:'name',value:taskName},{name:'namespace',value:'box1-ci'}]},params:Object.entries(params).map(([n,v])=>({name:n,value:v}))});
+  const digest='$(tasks.build.results.image-digest)',revision=w.data.sourceRevision,source=ORG+'/'+w.name;
+  return {taskRunTemplate:{serviceAccountName:w.name+'-release'},timeouts:{pipeline:'45m'},pipelineSpec:{tasks:[
+    task('build','box1-maven-bundle',{revision,'source-repo':source,'git-auth-secret':secretName,'push-image':'true','image-name':w.name+'-bundle'}),
+    task('security','box1-security-gates',{'image-reference':`${REGISTRY}/box1-ci/${w.name}-bundle@${digest}`,'image-digest':digest,'source-revision':revision,'source-repository':source,'application-name':w.name,'pipeline-run':'$(context.pipelineRun.name)',enforcement:'gate','rhtpa-secret':'rhtpa-ci','rhacs-secret':'rhacs-ci'},'build'),
+    task('consumer','box1-bundle-consumer-pr',{revision,'image-digest':digest,'bundle-name':w.name+'-bundle','source-repository':source,'consumer-repository':consumer.repository,'consumer-path':consumer.path,'gate-policy':'$(tasks.security.results.policy)','git-auth-secret':secretName,'pipeline-run':'$(context.pipelineRun.name)'},'security'),
+  ],results:[{name:'image-digest',value:digest},{name:'gate-policy',value:'$(tasks.security.results.policy)'},{name:'gate-findings',value:'$(tasks.security.results.findings)'},{name:'consumer-pr',value:'$(tasks.consumer.results.pr-url)'},{name:'consumer-outcome',value:'$(tasks.consumer.results.outcome)'}]}};
+}
+function artifactBuildResults(w, run) {
+  const results=Object.fromEntries((run.status.results||[]).map(r=>[r.name,r.value]));
+  const imageDigest=imageDigestResult(run);
+  check(results['gate-policy']==='pass','The bundle did not pass the security gate in gate mode; it was not proposed');
+  const outcome=results['consumer-outcome'],url=results['consumer-pr'];
+  check(['opened','updated','unchanged','current'].includes(outcome),'The bundle was not proposed to its consumer (outcome '+(outcome||'missing')+'); inspect PipelineRun box1-ci/'+run.metadata.name);
+  check(outcome==='current'||new RegExp(`^https://github\\.com/${ORG}/${w.data.consumer.repository}/pull/[0-9]+$`).test(url||''),'The consumer PR URL is not a PR in the declared consumer');
+  return {imageDigest,gate:{enforcement:'gate',policy:'pass',findings:results['gate-findings']||'unavailable',pipelineRun:run.metadata.name},consumerPR:{outcome,url:outcome==='current'?null:url}};
+}
+async function artifactVerify(w) {
+  requireImageDigest(w);
+  const {consumer,consumerPR:pr,gate}=w.data,digest=w.data.imageDigest,bundle=`box1-ci/${w.name}-bundle`;
+  check(gate?.enforcement==='gate'&&gate.policy==='pass','The security gate result is not recorded as a pass in gate mode');
+  check(consumer?.repository&&pr?.outcome,'The consumer PR result is not recorded');
+  let state;
+  await w.wait('bundle digest and consumer PR',300,async()=>{
+    const stream=await w.kube.get(`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreams/${w.name}-bundle`);
+    if(!(stream?.status?.tags||[]).some(t=>(t.items||[]).some(i=>i.image===digest)))return `${bundle} holds ${digest}`;
+    if(pr.outcome==='current') {
+      const file=await w.content(consumer.repository,consumer.path);
+      check(file?.includes(`/${bundle}@${digest}`),`${ORG}/${consumer.repository} no longer pins ${bundle}@${digest} and no PR was opened`);
+      state='current';return true;
+    }
+    const current=await w.github(`/repos/${ORG}/${consumer.repository}/pulls/${pr.url.split('/').pop()}`);
+    check(current?.html_url===pr.url&&current.base?.repo?.full_name===`${ORG}/${consumer.repository}`,'Consumer PR identity changed');
+    if(current.merged){state='merged';return true;}
+    check(current.state==='open','The consumer PR was closed without merging: '+pr.url);
+    state='open';return true;
+  });
+  await w.save('ARTIFACT_VERIFIED',{bundleImage:`${REGISTRY}/${bundle}@${digest}`,artifactVerifiedAt:new Date().toISOString(),consumerPR:{...pr,state}});
+  // The action's output keys are shared with the other profiles: deploymentUrl is where the
+  // bundle is delivered (the consumer PR, or the consumer file when it already pins it).
+  const links={sourceUrl:w.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${w.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${w.data.pipelineName}`,deploymentUrl:pr.url||`https://github.com/${ORG}/${consumer.repository}/blob/main/${consumer.path}`,argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${artifactCiApplication(w)}`,onboardingUrl:w.data.onboardingPR.url,statusRecord:'rhdh/'+w.key,imageDigest:digest};
+  for(const [key,value] of Object.entries(links))w.ctx.output(key,value);
+}
+// A published, gated bundle that was proposed to (or is already pinned by) its consumer.
+function artifactComplete(data) { return Boolean(data?.bundleImage&&data.artifactVerifiedAt&&data.onboardingPR?.merged&&data.gate?.policy==='pass'&&data.consumerPR?.outcome); }
 class Kube {
   async request(method, resource, body, allowMissing = false) {
     const token = (await fs.readFile('/var/run/secrets/kubernetes.io/serviceaccount/token','utf8')).trim();
@@ -510,27 +676,31 @@ class Workflow {
     },options);
     this.ctx.logger.info(`${applicationName} sync completed at ${expectedRevision}`);
   }
+  // The Argo Application the onboarding PR creates (the profile's gitopsApplication).
+  applicationName() { return this.handlers.gitopsApplication?this.handlers.gitopsApplication(this):this.name; }
   // Syncs the workload index so the service Application exists, then requests the
   // service sync without waiting for it. awaitServiceSync observes the outcome.
   async requestServiceSync() {
     const revision=this.data.onboardingPR?.mergeCommit;
     const indexRequested=await this.requestApplicationSync(WORKLOADS_APP,revision,'box1-workloads-dev');
     if(indexRequested!==null) await this.awaitApplicationSync(WORKLOADS_APP,revision,'box1-workloads-dev',indexRequested);
+    const application=this.applicationName();
     await this.wait('new service Argo Application creation',300,async()=>{
-      const app=await this.kube.get(APPS+'/'+this.name);
-      if(!app)return this.name+' Application exists';
-      this.log('platform','ready',{condition:'service_application_created',application:this.name,namespace:'openshift-gitops'});
+      const app=await this.kube.get(APPS+'/'+application);
+      if(!app)return application+' Application exists';
+      this.log('platform','ready',{condition:'service_application_created',application,namespace:'openshift-gitops'});
       return true;
     });
-    const requested=await this.requestApplicationSync(this.name,revision,this.name);
-    const observed=(await this.kube.get(APPS+'/'+this.name))?.status?.sync;
-    this.log('platform',requested===null?'ready':'waiting',{condition:'service_application_sync',application:this.name,observedRevision:observed?.revision||observed?.revisions?.join(',')||'none'});
+    const requested=await this.requestApplicationSync(application,revision,application);
+    const observed=(await this.kube.get(APPS+'/'+application))?.status?.sync;
+    this.log('platform',requested===null?'ready':'waiting',{condition:'service_application_sync',application,observedRevision:observed?.revision||observed?.revisions?.join(',')||'none'});
     if(requested===null) await this.save('PLATFORM_APPS_SYNCED',{applicationsSyncedAt:new Date().toISOString()});
     else await this.save('PLATFORM_SYNC_REQUESTED',{serviceSyncRequestedAt:new Date(requested).toISOString()});
   }
   async awaitServiceSync(options) {
     if(this.data.applicationsSyncedAt) return;
-    await this.awaitApplicationSync(this.name,this.data.onboardingPR?.mergeCommit,this.name,Date.parse(this.data.serviceSyncRequestedAt),options);
+    const application=this.applicationName();
+    await this.awaitApplicationSync(application,this.data.onboardingPR?.mergeCommit,application,Date.parse(this.data.serviceSyncRequestedAt),options);
     await this.save(null,{applicationsSyncedAt:new Date().toISOString()});
   }
   async content(repo,file,ref='main') { const result=await this.github(`/repos/${ORG}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`,'GET',undefined,{missing:true});return result?Buffer.from(result.content,'base64').toString():null; }
@@ -666,7 +836,8 @@ class Workflow {
     const p=Buffer.from(JSON.stringify({iat:now-60,exp:now+300,iss:String(app.getString('appId'))})).toString('base64url');
     const unsigned=h+'.'+p;const jwt=unsigned+'.'+crypto.sign('RSA-SHA256',Buffer.from(unsigned),app.getString('privateKey')).toString('base64url');
     const installation=await this.github('/orgs/'+ORG+'/installation','GET',undefined,{token:jwt});
-    return this.github('/app/installations/'+installation.id+'/access_tokens','POST',{repositories:[this.name],permissions:{contents:'read'}},{token:jwt});
+    const scope=this.handlers.buildCredential?this.handlers.buildCredential(this):{repositories:[this.name],permissions:{contents:'read'}};
+    return this.github('/app/installations/'+installation.id+'/access_tokens','POST',scope,{token:jwt});
   }
   hasBuild() { return Boolean(this.handlers.buildSpec||this.handlers.buildResults); }
   async build() {
@@ -794,7 +965,8 @@ class Workflow {
   async requestPromotionSync() {
     if(this.data.promotionSync) return;
     const revision=this.data.promotionPR.mergeCommit;
-    const requested=await this.requestApplicationSync(this.name,revision,this.name);
+    const application=this.applicationName();
+    const requested=await this.requestApplicationSync(application,revision,application);
     await this.save('PROMOTION_SYNC_REQUESTED',{promotionSync:{revision,requestedAt:requested===null?null:new Date(requested).toISOString()}});
   }
   async verify() {
@@ -855,4 +1027,4 @@ async function ensureCatalog(catalog,ctx) {
   }
   throw new Error('Catalog registration did not resolve '+ref+' within five minutes; resume the same onboarding request');
 }
-module.exports={DELIVERY_PHASES,PROFILES,Workflow,Kube,validateName,validateProfile,profileInputSchema,validateBundle,validateVmBundle,filesAt,blobSha,ensureCatalog};
+module.exports={DELIVERY_PHASES,PROFILES,Workflow,Kube,validateName,validateProfile,profileInputSchema,validateBundle,validateVmBundle,validateArtifactBundle,filesAt,blobSha,ensureCatalog};

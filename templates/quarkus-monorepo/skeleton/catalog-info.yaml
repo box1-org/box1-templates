@@ -1,0 +1,32 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description | dump }}
+  annotations:
+    github.com/project-slug: box1-org/${{ values.name }}
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/source-location: url:https://github.com/box1-org/${{ values.name }}/
+    janus-idp.io/tekton: ${{ values.name }}
+    box1.org/template-version: "1.0.0"
+    box1.org/bundle-image: box1-ci/${{ values.name }}-bundle
+    box1.org/bundle-consumer: box1-org/${{ values.consumerRepository }}
+  tags: [java, quarkus, maven, tekton, oci-bundle]
+  links:
+    - url: https://github.com/box1-org/${{ values.name }}
+      title: Source Repository
+      icon: github
+    - url: https://github.com/box1-org/${{ values.consumerRepository }}
+      title: Consumer repository (${{ values.consumerRepository }})
+      icon: github
+    - url: https://github.com/box1-org/box1-workloads-dev/tree/main/ci/${{ values.name }}
+      title: CI configuration (PaC Repository and release identity)
+    - url: https://devspaces.apps.ocp.box1.org/#https://github.com/box1-org/${{ values.name }}
+      title: Open in Dev Spaces
+      icon: code
+spec:
+  # Code-only: no backstage.io/kubernetes-id or argocd/* annotations, because nothing
+  # is deployed. The modules ship inside the consumer's OS image.
+  type: library
+  lifecycle: experimental
+  owner: ${{ values.owner | dump }}
