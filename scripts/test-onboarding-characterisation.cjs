@@ -248,7 +248,18 @@ function actionSchemas(){
     const file=path.resolve(ROOT,'plugins/box1-onboarding/index.cjs');delete require.cache[file];
     const definition=require(file).default;let init;definition.register({registerInit:o=>{init=o.init;}});
     const actions=[];init({actions:{addActions:(...a)=>actions.push(...a)},config:{},catalog:{}});
-    return actions.map(a=>({id:a.id,description:a.description,schema:a.schema}));
+    // The profile enum is generated from the dispatch table, so every added profile
+    // (artifact, 1.4.0) extends it. The fixture characterises service and
+    // virtual-machine: compare the enum restricted to them, and require that later
+    // profiles are only appended after them.
+    const restrict=schema=>JSON.parse(JSON.stringify(schema),(key,value)=>{
+      if(value&&Array.isArray(value.enum)&&value.enum[0]==='service'&&value.default==='service'){
+        assert.deepEqual(value.enum.slice(0,2),Object.keys(PROFILES_UNDER_TEST),'service and virtual-machine stay first in the profile enum');
+        return {...value,enum:value.enum.filter(p=>Object.hasOwn(PROFILES_UNDER_TEST,p))};
+      }
+      return value;
+    });
+    return actions.map(a=>({id:a.id,description:a.description,schema:restrict(a.schema)}));
   } finally { Module._load=load; }
 }
 

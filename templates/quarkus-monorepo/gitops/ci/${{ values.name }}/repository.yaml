@@ -1,0 +1,15 @@
+---
+# Pipelines-as-Code for box1-org/${{ values.name }}. The release token may write only to
+# the declared consumer (for the digest-bump PR); never to box1-gitops or box1-workloads-dev.
+apiVersion: pipelinesascode.tekton.dev/v1alpha1
+kind: Repository
+metadata:
+  name: "${{ values.name }}"
+  namespace: box1-ci
+spec:
+  url: https://github.com/box1-org/${{ values.name }}
+  concurrency_limit: 1
+  settings:
+    pipelinerun_provenance: default_branch
+    github_app_token_scope_repos:
+    - box1-org/${{ values.consumerRepository }}

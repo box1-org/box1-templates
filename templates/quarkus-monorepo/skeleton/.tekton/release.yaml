@@ -1,0 +1,142 @@
+---
+# Release on merge to main (artifact golden path, box1-docs#137):
+#   build    - multi-module mvn verify; the module fast-jars as a FROM-scratch OCI
+#              bundle pushed by digest to box1-ci/${{ values.name }}-bundle:<revision>
+#   security - box1-security-gates in gate mode; a policy failure stops the release
+#   consumer - only after the gate passes: one digest-bump PR in the consumer repository
+#              (never merged automatically)
+# There is no GitOps promotion: nothing from this repository is deployed.
+# The consumer is declared here (consumer-repository, consumer-path) and in the token
+# scope of the PaC Repository in box1-workloads-dev/ci/${{ values.name }}; change both together.
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  labels:
+    backstage.io/kubernetes-id: ${{ values.name }}
+  generateName: "${{ values.name }}-release-"
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/on-target-branch: "[main]"
+    pipelinesascode.tekton.dev/target-namespace: box1-ci
+    pipelinesascode.tekton.dev/max-keep-runs: '10'
+spec:
+  taskRunTemplate:
+    serviceAccountName: ${{ values.name }}-release
+  timeouts:
+    pipeline: 45m
+  params:
+  - name: revision
+    value: "{{revision}}"
+  - name: git-auth-secret
+    value: "{{git_auth_secret}}"
+  - name: consumer-repository
+    value: ${{ values.consumerRepository }}
+  - name: consumer-path
+    value: ${{ values.consumerPath }}
+  pipelineSpec:
+    params:
+    - name: revision
+      type: string
+    - name: git-auth-secret
+      type: string
+    - name: consumer-repository
+      type: string
+    - name: consumer-path
+      type: string
+    tasks:
+    - name: build
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-maven-bundle
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: revision
+        value: "$(params.revision)"
+      - name: git-auth-secret
+        value: "$(params.git-auth-secret)"
+      - name: push-image
+        value: 'true'
+      - name: source-repo
+        value: box1-org/${{ values.name }}
+      - name: image-name
+        value: "${{ values.name }}-bundle"
+    - name: security
+      runAfter:
+      - build
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-security-gates
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: image-reference
+        value: "image-registry.openshift-image-registry.svc:5000/box1-ci/${{ values.name }}-bundle@$(tasks.build.results.image-digest)"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: source-revision
+        value: "$(params.revision)"
+      - name: source-repository
+        value: "box1-org/${{ values.name }}"
+      - name: application-name
+        value: "${{ values.name }}"
+      - name: pipeline-run
+        value: "$(context.pipelineRun.name)"
+      # Always gate: a bundle that fails policy is never proposed to the consumer.
+      - name: enforcement
+        value: gate
+      - name: rhtpa-secret
+        value: rhtpa-ci
+      - name: rhacs-secret
+        value: rhacs-ci
+    - name: consumer
+      runAfter:
+      - security
+      taskRef:
+        resolver: cluster
+        params:
+        - name: kind
+          value: task
+        - name: name
+          value: box1-bundle-consumer-pr
+        - name: namespace
+          value: box1-ci
+      params:
+      - name: revision
+        value: "$(params.revision)"
+      - name: image-digest
+        value: "$(tasks.build.results.image-digest)"
+      - name: bundle-name
+        value: "${{ values.name }}-bundle"
+      - name: source-repository
+        value: "box1-org/${{ values.name }}"
+      - name: consumer-repository
+        value: "$(params.consumer-repository)"
+      - name: consumer-path
+        value: "$(params.consumer-path)"
+      - name: gate-policy
+        value: "$(tasks.security.results.policy)"
+      - name: git-auth-secret
+        value: "$(params.git-auth-secret)"
+      - name: pipeline-run
+        value: "$(context.pipelineRun.name)"
+    results:
+    - name: image-digest
+      value: "$(tasks.build.results.image-digest)"
+    - name: gate-policy
+      value: "$(tasks.security.results.policy)"
+    - name: consumer-pr
+      value: "$(tasks.consumer.results.pr-url)"
+    - name: consumer-outcome
+      value: "$(tasks.consumer.results.outcome)"
+    # Read by the OpenShift Pipelines console Vulnerabilities column.
+    - name: SCAN_OUTPUT
+      value: "$(tasks.security.results.SCAN_OUTPUT)"
