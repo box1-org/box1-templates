@@ -1,0 +1,20 @@
+---
+# CI configuration of a code-only repository (artifact profile, box1-docs#137). There is
+# no workload Application: this one only reconciles box1-ci resources from ci/<name>.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "${{ values.name }}-ci"
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/box1-org/box1-workloads-dev.git
+    targetRevision: main
+    path: ci/${{ values.name }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: box1-ci
+  syncPolicy:
+    automated:
+      selfHeal: true
