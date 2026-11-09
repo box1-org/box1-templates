@@ -1,0 +1,32 @@
+# Developer Hub entity for this instance (box1-docs#138). An instance has no source
+# repository, so its catalog entry lives beside its GitOps bundle. Not a Kubernetes
+# resource: kustomization.yaml does not list it.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ ("VM instance of " + values.source + " for site " + values.siteId) | dump }}
+  annotations:
+    backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/source-location: url:https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${{ values.name }}/
+    argocd/instance-name: openshift-gitops
+    argocd/app-selector: backstage.io/kubernetes-id=${{ values.name }}
+    box1.org/workload-profile: vm-instance
+    box1.org/source-image: ${{ values.source }}
+    box1.org/site-id: ${{ values.siteId }}
+    box1.org/template-version: "1.0.0"
+  tags: [vm-instance, rhel, bootc, image-mode, kubevirt, gitops]
+  links:
+    - url: https://console-openshift-console.apps.ocp.box1.org/k8s/ns/${{ values.namespace }}/kubevirt.io~v1~VirtualMachine/${{ values.name }}
+      title: Virtual machine (OpenShift console)
+    - url: https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${{ values.name }}
+      title: Desired VM configuration
+    - url: https://github.com/box1-org/${{ values.source }}
+      title: Source OS image repository
+      icon: github
+spec:
+  type: vm-instance
+  lifecycle: experimental
+  owner: ${{ values.owner | dump }}
+  dependsOn:
+    - component:default/${{ values.source }}

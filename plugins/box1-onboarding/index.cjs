@@ -3,7 +3,7 @@ const { createBackendModule, coreServices } = require('@backstage/backend-plugin
 const { createTemplateAction } = require('@backstage/plugin-scaffolder-node');
 const { scaffolderActionsExtensionPoint } = require('@backstage/plugin-scaffolder-node');
 const { DefaultGithubCredentialsProvider, ScmIntegrations } = require('@backstage/integration');
-const { Workflow, profileInputSchema } = require('./workflow.cjs');
+const { Workflow, profileInputSchema, RESOLVE_OUTPUTS } = require('./workflow.cjs');
 const {catalogServiceRef}=require('@backstage/plugin-catalog-node');
 const shared = { name:{type:'string',minLength:3,maxLength:35}, owner:{type:'string'}, profile:profileInputSchema() };
 function action(id, operation, config, credentials) {
@@ -36,6 +36,11 @@ exports.default=createBackendModule({pluginId:'scaffolder',moduleId:'box1-develo
       id:'box1:catalog:ensure',description:'Register or reuse the owned service catalog entry and observe processing',
       schema:{input:{type:'object',additionalProperties:false,required:['name'],properties:{name:shared.name}},output:{type:'object',properties:{entityRef:{type:'string'},catalogInfoUrl:{type:'string'}}}},
       async handler(ctx){await new Workflow({ctx,config,credentials,catalog}).run('registerCatalog');},
+    }),createTemplateAction({
+      // 1.5.0 (box1-docs#138): for profiles without a source repository (vm-instance).
+      id:'box1:development:resolve-source',description:'Resolve the approved revision and digests of the source an instance boots, before its GitOps bundle is rendered',
+      schema:{input:{type:'object',additionalProperties:false,required:['name','profile','source'],properties:{name:shared.name,profile:shared.profile,source:{type:'string',minLength:3,maxLength:40,pattern:'^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'}}},output:{type:'object',properties:Object.fromEntries(RESOLVE_OUTPUTS.map(key=>[key,{type:'string'}]))}},
+      async handler(ctx){await new Workflow({ctx,config,credentials}).run('resolveSource');},
     }));
   }});
 }});

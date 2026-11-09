@@ -1,0 +1,12 @@
+# SSH public keys for cloud-user, delivered at runtime by KubeVirt accessCredentials
+# through qemu-guest-agent. Edits propagate to the running guest without a restart,
+# and replace authorized_keys. Only public keys belong here.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "${{ values.name }}-admin-ssh"
+  namespace: "${{ values.namespace }}"
+type: Opaque
+stringData:
+  key1: "${{ values.adminSshPublicKey }}"
