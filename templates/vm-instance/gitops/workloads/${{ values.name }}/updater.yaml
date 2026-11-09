@@ -1,0 +1,19 @@
+# Pull identity the guest uses for registry access to box1-ci (box1-registry-setup in
+# the source image). Pull rights come from the Group binding in onboarding.yaml. The
+# token controller fills the Secret; no credential value is stored in Git.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: "${{ values.name }}-updater"
+  namespace: "${{ values.namespace }}"
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "${{ values.name }}-updater-token"
+  namespace: "${{ values.namespace }}"
+  annotations:
+    kubernetes.io/service-account.name: "${{ values.name }}-updater"
+type: kubernetes.io/service-account-token

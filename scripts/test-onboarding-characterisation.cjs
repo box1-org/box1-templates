@@ -259,7 +259,13 @@ function actionSchemas(){
       }
       return value;
     });
-    return actions.map(a=>({id:a.id,description:a.description,schema:restrict(a.schema)}));
+    // Actions added after 1.2.0 (box1:development:resolve-source, 1.5.0) are not part of
+    // the recorded behaviour: they must be registered after every recorded action, and are
+    // left out of the comparison.
+    const recorded=JSON.parse(fss.readFileSync(FIXTURE,'utf8')).actionSchemas.map(a=>a.id);
+    const ids=actions.map(a=>a.id);
+    assert.deepEqual(ids.slice(0,recorded.length),recorded,'recorded actions keep their order; new actions are appended');
+    return actions.filter(a=>recorded.includes(a.id)).map(a=>({id:a.id,description:a.description,schema:restrict(a.schema)}));
   } finally { Module._load=load; }
 }
 

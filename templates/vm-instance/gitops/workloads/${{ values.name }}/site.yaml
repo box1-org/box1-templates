@@ -1,0 +1,25 @@
+# Non-secret site identity (box1-docs#140). The cloud-init assembly script in box1-docs
+# (scripts/vm-cloud-init/assemble_cloud_init_secret.py) combines it with the site's
+# Keycloak client secret into the Secret ${{ values.name }}-cloud-init, outside Git.
+# Only these keys are allowed; never put a credential here.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "${{ values.name }}-site"
+  namespace: "${{ values.namespace }}"
+  labels:
+    box1.org/instance: "${{ values.name }}"
+data:
+  siteId: "${{ values.siteId }}"
+  keycloakClientId: "${{ values.keycloakClientId }}"
+  keycloakTokenUrl: "${{ values.keycloakTokenUrl }}"
+{%- if values.assetServiceUrl %}
+  assetServiceUrl: "${{ values.assetServiceUrl }}"
+{%- endif %}
+{%- if values.kafkaBootstrapServers %}
+  kafkaBootstrapServers: "${{ values.kafkaBootstrapServers }}"
+{%- endif %}
+{%- if values.otlpEndpoint %}
+  otlpEndpoint: "${{ values.otlpEndpoint }}"
+{%- endif %}

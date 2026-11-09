@@ -21,6 +21,7 @@
     "box1:development:onboard",
     "box1:catalog:submit",
     "box1:catalog:verify",
-    "box1:catalog:ensure"
+    "box1:catalog:ensure",
+    "box1:development:resolve-source"
   ]
 }

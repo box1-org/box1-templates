@@ -1,0 +1,83 @@
+# One instance of the shared OS image box1-ci/${{ values.source }} (vm-instance profile,
+# box1-docs#138). Halted until the first promotion records the source's approved OS
+# digest, adds datavolume.yaml to the kustomization and sets runStrategy: Always.
+# Later promotions change only this instance's box1.org/* annotations; the instance
+# pins digests and never follows the source's channel tag.
+# Identity: the cloudinitdisk volume reads the Secret ${{ values.name }}-cloud-init, which is
+# assembled outside Git (box1-docs runbooks/vm-cloud-init-identity.md). The VM cannot
+# start until it exists.
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: "${{ values.name }}"
+  namespace: "${{ values.namespace }}"
+  annotations:
+    box1.org/source-image: ${{ values.source }}
+    box1.org/os-image-digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    box1.org/source-revision: ${{ values.sourceRevision }}
+    box1.org/build-pipelinerun: awaiting-first-release
+spec:
+  runStrategy: Halted
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: "${{ values.name }}"
+    spec:
+      accessCredentials:
+        - sshPublicKey:
+            source:
+              secret:
+                secretName: "${{ values.name }}-admin-ssh"
+            propagationMethod:
+              qemuGuestAgent:
+                users: [cloud-user]
+      domain:
+        cpu:
+          cores: ${{ values.cpuCores }}
+        memory:
+          guest: ${{ values.memory }}
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        devices:
+          autoattachSerialConsole: true
+          rng: {}
+          disks:
+            - name: root
+              bootOrder: 1
+              disk:
+                bus: virtio
+            # Read by box1-registry-setup.service as /dev/disk/by-id/virtio-<serial>.
+            - name: serviceca
+              serial: serviceca
+              disk:
+                bus: virtio
+            - name: regtoken
+              serial: regtoken
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: root
+          dataVolume:
+            name: "${{ values.name }}-root"
+        - name: serviceca
+          configMap:
+            name: openshift-service-ca.crt
+        - name: regtoken
+          secret:
+            secretName: "${{ values.name }}-updater-token"
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            secretRef:
+              name: "${{ values.name }}-cloud-init"

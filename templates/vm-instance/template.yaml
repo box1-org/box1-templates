@@ -1,0 +1,201 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: vm-instance
+  title: Add a VM Instance (Site) of an OS Image
+  description: One more VM that boots an already built and approved RHEL image mode OS image, with its own namespace, site identity (cloud-init) and pinned digest. No repository and no build.
+  tags: [rhel, bootc, image-mode, kubevirt, virtualization, cloud-init, site, golden-path]
+  annotations:
+    box1.org/template-version: "1.0.0"
+spec:
+  owner: user:default/mike
+  type: vm-instance
+  parameters:
+    - title: VM instance
+      required: [name, source, owner, adminSshPublicKey]
+      properties:
+        name:
+          title: Instance name
+          type: string
+          minLength: 3
+          maxLength: 35
+          pattern: '^(?!quarkus-reference$)(?!orders-service$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: The VM, its Argo CD Application and catalog entry; the namespace is <name>-dev. Must not match an existing repository or workload.
+        source:
+          title: Source OS image repository
+          type: string
+          enum: [site-gateway-os]
+          default: site-gateway-os
+          description: An image repository on the vm-instance allowlist (box1-gitops gitops-validate VM_INSTANCE_SOURCES). The instance boots the source's currently approved digest and then pins it.
+        owner:
+          title: Catalog owner
+          type: string
+          default: user:default/mike
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        adminSshPublicKey:
+          title: Administrator SSH public key
+          type: string
+          maxLength: 800
+          pattern: '^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa) [A-Za-z0-9+/=]+( [A-Za-z0-9@._-]{1,64})?$'
+          description: Public key for the cloud-user account (sudo), delivered by the guest agent.
+        cpuCores:
+          title: vCPU cores
+          type: integer
+          enum: [1, 2, 4]
+          default: 2
+        memory:
+          title: Memory
+          type: string
+          enum: [2Gi, 4Gi, 8Gi]
+          default: 4Gi
+        rootDiskSize:
+          title: Root disk size
+          type: string
+          enum: [12Gi, 20Gi, 40Gi]
+          default: 20Gi
+          description: Must hold the source's install disk (about 11Gi for the RHEL image mode golden path). lvms-vg1 is shared; check free space before choosing more.
+    - title: Site identity
+      description: Stored in Git as the ConfigMap <name>-site. The site's Keycloak client secret is not entered here; it is added outside Git with the box1-docs runbook vm-cloud-init-identity.md.
+      required: [siteId, keycloakClientId, keycloakTokenUrl]
+      properties:
+        siteId:
+          title: Site ID
+          type: string
+          pattern: '^[a-z][a-z0-9_]{1,62}$'
+          description: For example site_ds9.
+        keycloakClientId:
+          title: Keycloak client ID
+          type: string
+          pattern: '^[a-z][a-z0-9-]{1,62}$'
+          description: The site's machine client in the box1 realm (usually the instance name).
+        keycloakTokenUrl:
+          title: Keycloak token URL
+          type: string
+          maxLength: 300
+          pattern: '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._%+:-]*)*$'
+          default: https://keycloak.apps.ocp.box1.org/auth/realms/box1/protocol/openid-connect/token
+        assetServiceUrl:
+          title: Asset service URL (optional)
+          type: string
+          maxLength: 300
+          pattern: '^(https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._%+:-]*)*)?$'
+          default: ''
+        kafkaBootstrapServers:
+          title: Kafka bootstrap servers (optional)
+          type: string
+          maxLength: 300
+          pattern: '^([A-Za-z0-9.-]+:[0-9]{1,5}(,[A-Za-z0-9.-]+:[0-9]{1,5})*)?$'
+          default: ''
+          description: host:port[,host:port]
+        otlpEndpoint:
+          title: OpenTelemetry (OTLP) endpoint (optional)
+          type: string
+          maxLength: 300
+          pattern: '^(https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._%+:-]*)*)?$'
+          default: ''
+  steps:
+    - id: source
+      name: Resolve the source's approved OS image and disk
+      action: box1:development:resolve-source
+      input:
+        name: ${{ parameters.name }}
+        source: ${{ parameters.source }}
+        profile: vm-instance
+    - id: fetchGitops
+      name: Generate the instance GitOps configuration
+      action: fetch:template
+      input:
+        url: ./gitops
+        targetPath: gitops
+        values:
+          name: ${{ parameters.name }}
+          namespace: ${{ parameters.name }}-dev
+          source: ${{ parameters.source }}
+          sourceRevision: ${{ steps.source.output.sourceRevision }}
+          owner: ${{ parameters.owner }}
+          adminSshPublicKey: ${{ parameters.adminSshPublicKey }}
+          cpuCores: ${{ parameters.cpuCores }}
+          memory: ${{ parameters.memory }}
+          rootDiskSize: ${{ parameters.rootDiskSize }}
+          siteId: ${{ parameters.siteId }}
+          keycloakClientId: ${{ parameters.keycloakClientId }}
+          keycloakTokenUrl: ${{ parameters.keycloakTokenUrl }}
+          assetServiceUrl: ${{ parameters.assetServiceUrl }}
+          kafkaBootstrapServers: ${{ parameters.kafkaBootstrapServers }}
+          otlpEndpoint: ${{ parameters.otlpEndpoint }}
+    # There is no source repository, so provision creates the onboarding record; the
+    # catalog steps therefore run after it.
+    - id: provision
+      name: Provision and merge the instance GitOps onboarding
+      action: box1:development:provision
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.source.output.sourceRevision }}
+        profile: vm-instance
+    - id: catalogSubmit
+      name: Submit the instance to the catalog
+      action: box1:catalog:submit
+      input:
+        name: ${{ parameters.name }}
+    - id: platform
+      name: Sync the instance Application
+      action: box1:development:platform
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.source.output.sourceRevision }}
+        profile: vm-instance
+    - id: build
+      name: Adopt the approved digests and wait for readiness, including the cloud-init Secret
+      action: box1:development:build
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.source.output.sourceRevision }}
+        profile: vm-instance
+    - id: promote
+      name: Promote the approved digest and start the VM through GitOps
+      action: box1:development:promote
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.source.output.sourceRevision }}
+        profile: vm-instance
+    - id: verify
+      name: Verify the VM booted the approved digest
+      action: box1:development:verify
+      input:
+        name: ${{ parameters.name }}
+        sourceRevision: ${{ steps.source.output.sourceRevision }}
+        profile: vm-instance
+    - id: catalogVerify
+      name: Verify catalog processing
+      action: box1:catalog:verify
+      input:
+        name: ${{ parameters.name }}
+  output:
+    links:
+      - title: Instance in catalog
+        icon: catalog
+        entityRef: component:default/${{ parameters.name }}
+      - title: Source OS image repository
+        url: ${{ steps.verify.output.sourceUrl }}
+      - title: Virtual machine (OpenShift console)
+        url: ${{ steps.verify.output.deploymentUrl }}
+      - title: Booted-digest check
+        url: ${{ steps.verify.output.pipelineUrl }}
+      - title: Argo CD Application
+        url: ${{ steps.verify.output.argoUrl }}
+      - title: Validated onboarding PR
+        url: ${{ steps.verify.output.onboardingUrl }}
+    text:
+      - title: VM instance is running
+        content: |
+          ${{ parameters.name }} booted ${{ parameters.source }} at the approved digest
+          ${{ steps.verify.output.imageDigest }} and pins it. It does not follow the source's
+          channel tag; a later digest reaches it only through its own promotion.
+          Log in with `virtctl ssh -n ${{ parameters.name }}-dev cloud-user@vm/${{ parameters.name }}`.
+          Onboarding status record: ${{ steps.verify.output.statusRecord }}.
+          If the task stopped at "cloud_init_secret", create ${{ parameters.name }}-dev/${{ parameters.name }}-cloud-init
+          with the box1-docs runbook vm-cloud-init-identity.md (approval required), then submit the
+          same parameters again to resume.
