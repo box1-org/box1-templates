@@ -328,8 +328,10 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
     const target = path.join(root, '.validation/rhel-image-vm-cloudinit-on', name);
     const on = renderVm(target, { ...vmValues(name, { cloudInit: true, extraPackages: 'java-21-openjdk-headless' }), cloudInit: true });
     const offExtra = renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-off', name + '-extra'), { ...vmValues(name, { extraPackages: 'java-21-openjdk-headless' }), cloudInit: false });
-    const cfgPath = 'application/rootfs/etc/cloud/cloud.cfg.d/90-box1.cfg', usersPath = 'application/rootfs/usr/lib/sysusers.d/box1-site.conf';
-    assert.deepEqual(Object.keys(on).filter(f => !(f in offExtra)).sort(), [cfgPath, usersPath], 'cloudInit: true adds only the cloud-init configuration and the service user');
+    const extraRoot = 'application/rootfs-cloud-init/';
+    const cfgPath = extraRoot + 'etc/cloud/cloud.cfg.d/90-box1.cfg', usersPath = extraRoot + 'usr/lib/sysusers.d/box1-site.conf';
+    const tmpfilesPath = extraRoot + 'usr/lib/tmpfiles.d/box1-site.conf', keygenPath = extraRoot + 'usr/lib/systemd/system/sshd-keygen@.service.d/zz-box1-keygen.conf';
+    assert.deepEqual(Object.keys(on).filter(f => !(f in offExtra)).sort(), [cfgPath, keygenPath, usersPath, tmpfilesPath].sort(), 'cloudInit: true adds only rootfs-cloud-init/');
     assert.deepEqual(Object.keys(offExtra).filter(f => !(f in on)), [], 'cloudInit: true must not remove files');
     assert.deepEqual(Object.keys(offExtra).filter(f => offExtra[f].content !== on[f].content).sort(), ['application/Containerfile', 'application/README.md'], 'cloudInit: true changes only the Containerfile and README');
     for (const [file, value] of Object.entries(off)) if (file.startsWith('gitops/')) assert.deepEqual(on[file], value, `cloudInit must not change the GitOps bundle (${file})`);
@@ -337,24 +339,31 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
     validateVmBundle(await filesAt(path.join(target, 'gitops')), name);
     const containerfile = on['application/Containerfile'].content;
     assert.match(containerfile, /^        qemu-guest-agent cloud-init java-21-openjdk-headless \\$/m, 'cloud-init is installed with the image packages');
-    for (const required of ['rpm -q cloud-init', 'systemctl enable $unit.service', 'systemctl is-enabled cloud-init-local.service cloud-final.service', '"NoCloud", "None"', 'test ! -e /etc/box1/site.env', 'systemd-sysusers --dry-run /usr/lib/sysusers.d/box1-site.conf', 'systemctl disable bootc-fetch-apply-updates.timer', 'setsebool -P virt_qemu_ga_manage_ssh on']) assert(containerfile.includes(required), `cloudInit Containerfile must include ${required}`);
+    for (const required of ['rpm -q cloud-init', 'systemctl enable $unit.service', 'systemctl is-enabled cloud-init-local.service cloud-final.service', '"NoCloud", "None"', 'test ! -e /etc/box1 ', 'COPY rootfs-cloud-init/ /', 'systemd-sysusers --dry-run /usr/lib/sysusers.d/box1-site.conf', 'systemctl disable bootc-fetch-apply-updates.timer', 'setsebool -P virt_qemu_ga_manage_ssh on']) assert(containerfile.includes(required), `cloudInit Containerfile must include ${required}`);
     assert(containerfile.indexOf('rpm -q cloud-init') < containerfile.indexOf('bootc container lint'), 'cloud-init checks run before bootc container lint');
     assert(on[cfgPath].mode & 0o444 && !(on[cfgPath].mode & 0o111), 'cloud-init configuration is a plain readable file');
     const cfg = YAML.parse(on[cfgPath].content);
     assert.deepEqual(cfg, {
       datasource_list: ['NoCloud', 'None'], network: { config: 'disabled' }, users: [], ssh_pwauth: false, allow_public_ssh_keys: false,
-      ssh_deletekeys: false, ssh_genkeytypes: ['rsa', 'ecdsa', 'ed25519'],
-      cloud_init_modules: [['write_files', 'always'], 'ssh'], cloud_config_modules: [], cloud_final_modules: [],
-    }, 'cloud-init may only write files and generate missing SSH host keys');
+      vendor_data: { enabled: false }, cloud_init_modules: [['write_files', 'always']], cloud_config_modules: [], cloud_final_modules: [],
+    }, 'cloud-init may only write files');
+    // cloud-init's sshd-keygen drop-in must not stop host key generation, and keys are never regenerated.
+    assert.match(on[keygenPath].content, /^\[Unit\]\nConditionPathExists=\nConditionFileNotEmpty=\|!\/etc\/ssh\/ssh_host_%i_key\n$/m, 'sshd-keygen override resets conditions and restores the stock one');
+    assert.match(on[tmpfilesPath].content, /^d \/etc\/box1\/credentials 0750 root box1-site - -$/m, 'credential directory is root:box1-site 0750');
     assert.match(on[usersPath].content, /^u\s+box1-site\s+-\s+"Box1 site services"\s+-\s+\/usr\/sbin\/nologin$/m, 'box1-site is a system user without a login shell');
     assert(!/BEGIN|PRIVATE|password:|secret:/i.test(on[cfgPath].content + on[usersPath].content), 'No credential material in the image');
-    console.log(`PASS rhel-image-vm cloudInit: off renders byte-identical for every case${baselineRef ? ` and to ${baselineRef}` : ''}; on changes only the image (cloud-init config, service user), GitOps bundle unchanged and accepted by the plugin gate`);
+    console.log(`PASS rhel-image-vm cloudInit: off renders byte-identical for every case${baselineRef ? ` and to ${baselineRef}` : ''}; on changes only the image (rootfs-cloud-init/, Containerfile, README), GitOps bundle unchanged and accepted by the plugin gate`);
   }
   assert.equal(vmTemplate.spec.parameters[0].properties.cloudInit.default, false, 'cloudInit stays opt-in');
   assert.equal(vmTemplate.spec.steps.find(s => s.id === 'fetchApplication').input.values.cloudInit, '${{ parameters.cloudInit }}');
   assert(!('cloudInit' in vmTemplate.spec.steps.find(s => s.id === 'fetchGitops').input.values), 'cloudInit must not reach the GitOps bundle');
   const base = { name: 'vm-golden-check', description: 'A RHEL 10 image mode virtual machine', owner: 'user:default/mike', visibility: 'private', adminSshPublicKey: key };
   for (const cloudInit of ['true', 1, null]) assert(!checkVmForm({ ...base, cloudInit }), `Accepted a non-boolean cloudInit: ${cloudInit}`);
+  // Fail safe: anything but boolean true (for example the string "false" or "true") renders the parameter off.
+  for (const cloudInit of ['true', 'false', 1]) {
+    const name = 'vm-golden-check';
+    assert.deepEqual(renderVm(path.join(root, '.validation/rhel-image-vm-cloudinit-nonbool', name), { ...vmValues(name, {}), cloudInit }), snapshot(path.join(root, '.validation/rhel-image-vm', name)), `cloudInit ${JSON.stringify(cloudInit)} must render off`);
+  }
   for (const adminSshPublicKey of ['', 'not-a-key', key + '\nssh-ed25519 AAAA second', '-----BEGIN OPENSSH PRIVATE KEY-----']) assert(!checkVmForm({ ...base, adminSshPublicKey }), 'Accepted invalid SSH public key');
   for (const extraPackages of ['vim; rm -rf /', '$(id)', 'Vim', 'a  b', ' leading']) assert(!checkVmForm({ ...base, extraPackages }), `Accepted unsafe package list: ${extraPackages}`);
   for (const name of ['box1-vm', 'quarkus-reference', 'Upper', 'a'.repeat(36)]) assert(!checkVmForm({ ...base, name }), `Accepted unsafe VM name: ${name}`);

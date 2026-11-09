@@ -74,7 +74,7 @@ spec:
           title: Per-instance identity with cloud-init (NoCloud)
           type: boolean
           default: false
-          description: Installs cloud-init restricted to a NoCloud disk, so one OS image can boot as several VM instances, each with its own site configuration and machine credential (box1-docs#140). It writes files only and never manages accounts, SSH keys, passwords, disks or networking. The VM created here boots without a NoCloud disk.
+          description: Installs cloud-init restricted to a NoCloud disk, so one OS image can boot as several VM instances, each with its own site configuration and machine credential (box1-docs#140). The image configuration runs only write_files; it manages no accounts, SSH keys, passwords, disks or networking. Write access to an instance's cloud-init Secret is root in that guest. The VM created here boots without a NoCloud disk.
   steps:
     - id: fetchApplication
       name: Generate OS image definition and pipelines

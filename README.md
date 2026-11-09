@@ -63,9 +63,13 @@ restricted to the NoCloud datasource (`datasource_list: [ NoCloud, None ]`). It
 lets one image boot as several VM instances: an instance VM that attaches a
 `cloudinitdisk` volume with `cloudInitNoCloud.secretRef` gets its site
 configuration and machine credential as files. The image configuration
-(`skeleton/rootfs/etc/cloud/cloud.cfg.d/90-box1.cfg`) runs only `write_files`
-(on every boot) and `ssh` (missing host keys only). Accounts, SSH keys, passwords,
-networking, disks and packages stay with the image, qemu-guest-agent and bootc.
+(`skeleton/{% if ... %}rootfs-cloud-init{% endif %}/`, copied only when the
+parameter is on) runs only `write_files`, on every boot, with networking and
+vendor-data disabled. Accounts, SSH keys, passwords, disks and packages stay with
+the image, qemu-guest-agent and bootc; `sshd-keygen` keeps generating host keys.
+These module lists shape what Box1-generated user-data does; they are not a
+security boundary, because user-data can override them. Write access to an
+instance's cloud-init Secret is root in that guest.
 The GitOps bundle this template generates is the same either way; the VM it
 creates boots without a NoCloud disk. Instance bundles come from the `vm-instance`
 profile (box1-docs#138). The Secret is assembled outside Git with the box1-docs
