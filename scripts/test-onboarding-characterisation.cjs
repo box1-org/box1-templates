@@ -248,7 +248,24 @@ function actionSchemas(){
     const file=path.resolve(ROOT,'plugins/box1-onboarding/index.cjs');delete require.cache[file];
     const definition=require(file).default;let init;definition.register({registerInit:o=>{init=o.init;}});
     const actions=[];init({actions:{addActions:(...a)=>actions.push(...a)},config:{},catalog:{}});
-    return actions.map(a=>({id:a.id,description:a.description,schema:a.schema}));
+    // The profile enum is generated from the dispatch table, so every added profile
+    // (artifact, 1.4.0) extends it. The fixture characterises service and
+    // virtual-machine: compare the enum restricted to them, and require that later
+    // profiles are only appended after them.
+    const restrict=schema=>JSON.parse(JSON.stringify(schema),(key,value)=>{
+      if(value&&Array.isArray(value.enum)&&value.enum[0]==='service'&&value.default==='service'){
+        assert.deepEqual(value.enum.slice(0,2),Object.keys(PROFILES_UNDER_TEST),'service and virtual-machine stay first in the profile enum');
+        return {...value,enum:value.enum.filter(p=>Object.hasOwn(PROFILES_UNDER_TEST,p))};
+      }
+      return value;
+    });
+    // Actions added after 1.2.0 (box1:development:resolve-source, 1.5.0) are not part of
+    // the recorded behaviour: they must be registered after every recorded action, and are
+    // left out of the comparison.
+    const recorded=JSON.parse(fss.readFileSync(FIXTURE,'utf8')).actionSchemas.map(a=>a.id);
+    const ids=actions.map(a=>a.id);
+    assert.deepEqual(ids.slice(0,recorded.length),recorded,'recorded actions keep their order; new actions are appended');
+    return actions.filter(a=>recorded.includes(a.id)).map(a=>({id:a.id,description:a.description,schema:restrict(a.schema)}));
   } finally { Module._load=load; }
 }
 

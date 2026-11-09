@@ -2,8 +2,8 @@
 
 Canonical source for the RHDH 1.9.7 / Backstage 1.45.3 dynamic backend module.
 It registers `box1:repository:ensure`, the `box1:development:` actions `provision`,
-`platform`, `build`, `promote`, `verify` and `onboard`, and the `box1:catalog:` actions
-`submit`, `verify` and `ensure`.
+`platform`, `build`, `promote`, `verify`, `onboard` and (1.5.0) `resolve-source`, and the
+`box1:catalog:` actions `submit`, `verify` and `ensure`.
 No private runtime dependencies are bundled; the compatible Hub image supplies
 the declared peer dependencies.
 
@@ -117,6 +117,8 @@ Profiles were introduced in 1.2.0. Since 1.3.0 every profile-specific behaviour 
 - **`service`** (default): the Quarkus Deployment path. Records, markers, template version, commit message and checks are unchanged from 1.1.x, so in-flight 1.1.x onboardings resume as before.
 - **`virtual-machine`**: RHEL 10 image mode VMs, from template `templates/rhel-image-vm` (box1-docs#55).
   - The profile is stored in the state record and in the `.box1/onboarding.json` marker. Every later phase must pass the same profile.
+- **`artifact`** (1.4.0): code-only multi-module Quarkus repositories that publish an OCI bundle and deploy nothing, from template `templates/quarkus-monorepo` (box1-docs#137). Stored in the record and marker like `virtual-machine`; see [`artifact`](#artifact-140-box1-docs137).
+- **`vm-instance`** (1.5.0): one more VM of an already built and approved bootc OS image, with its own namespace, cloud-init identity and pinned digest, from template `templates/vm-instance` (box1-docs#138). No source repository and no build; see [`vm-instance`](#vm-instance-150-box1-docs138).
 
 What each phase does for `virtual-machine`:
 
@@ -133,6 +135,66 @@ Hub RBAC: `developer-hub-onboarding-observe` needs `get` on `kubevirt.io` `virtu
 Tests:
 - `scripts/test-onboarding-vm.cjs` covers the profile.
 - `scripts/validate.mjs` renders the template and runs the bundle check.
+
+### `artifact` (1.4.0, box1-docs#137)
+
+Code-only multi-module Quarkus repositories from template `templates/quarkus-monorepo`.
+Nothing is deployed: there is no namespace, Deployment, Route or workload Application.
+Every merge to `main` publishes a `FROM scratch` OCI bundle `box1-ci/<name>-bundle` by
+digest, gates it with `box1-security-gates` in `gate` mode, and only then opens or updates
+one digest-bump PR in the declared consumer repository (for `site-gateway`:
+`site-gateway-os`). The Tasks are `box1-maven-bundle` and `box1-bundle-consumer-pr` in
+`box1-gitops/platform/pipelines/tasks`.
+
+| Phase | Behaviour |
+| --- | --- |
+| Bundle check (`validateArtifactBundle`) | Exactly `applications/<name>-ci.yaml` and `ci/<name>/{kustomization,repository,release}.yaml`. The Application `<name>-ci` tracks `ci/<name>` on `main`, targets `box1-ci` and does not prune. In `box1-ci` only: the PaC Repository `<name>` (keys `url`, `concurrency_limit`, `settings`; `default_branch` provenance; token scope exactly one consumer, never `box1-gitops` or `box1-workloads-dev`), the ServiceAccount `<name>-release`, the ImageStream `<name>-bundle`, and the Role and RoleBinding `<name>-bundle-push` (`get`/`update` on `imagestreams/layers` of `<name>-bundle`, bound to `<name>-release`). It is a narrower form of the `ci/<repo>` rule in `box1-gitops-validate` (box1-docs#139). |
+| Provision | The onboarding PR in `box1-workloads-dev` carries only those files; the existing PR, required-check and merge path is unchanged. |
+| Platform | Syncs `box1-workloads-dev`, then the `<name>-ci` Application (the `gitopsApplication` hook). The build barrier reads the consumer from `.tekton/release.yaml` at the source revision (`consumer-repository`, `consumer-path`), requires it to equal the merged Repository's token scope, stores it in the record as `consumer`, and waits for `<name>-release`, the push RoleBinding and the ImageStream. |
+| Build | One PipelineRun as `<name>-release`, the same three Tasks as the generated `.tekton/release.yaml`: `box1-maven-bundle` (push) → `box1-security-gates` (`enforcement: gate`) → `box1-bundle-consumer-pr`. Its credential Secret is scoped to the source and the consumer with `contents: write` and `pull_requests: write` (the `buildCredential` hook), because the consumer PR task writes a branch and a PR there; it is deleted after the run as for other profiles. Stored: `imageDigest`, `gate` and `consumerPR`. A gate policy other than `pass`, or a consumer outcome other than `opened`, `updated`, `unchanged` or `current`, fails the build. |
+| Readiness | `<name>-release`, the push Role and RoleBinding, the ImageStream, the PaC Repository scoped to the consumer, and `<name>-ci` Synced in `box1-ci`. No namespace or Deployment checks. |
+| Promote | Skipped (`profile_has_no_workload_promotion`): the consumer PR from the build takes its place. |
+| Verify | The digest is in `box1-ci/<name>-bundle`, the gate is recorded as `pass` in `gate` mode, and the consumer PR is open or merged (or, with outcome `current`, the consumer file already pins the digest). Saves `ARTIFACT_VERIFIED` with `bundleImage`. The shared output `deploymentUrl` is the consumer PR. |
+| Catalog | `catalogComplete` needs `bundleImage`, `artifactVerifiedAt`, the merged onboarding PR, the gate `pass` and a consumer outcome; there is no `deploymentImage`. The entity is `component:default/<name>`, type `library`, without Kubernetes or Argo CD annotations. |
+
+Hub RBAC: `developer-hub-onboarding-build` needs `get` on `image.openshift.io`
+`imagestreams` in `box1-ci` (verify). That change is in the box1-gitops PR that adds the
+two Tasks.
+
+Tests:
+- `scripts/test-onboarding-artifact.cjs` covers the profile, including the full delivery sequence without a workload.
+- `scripts/validate.mjs` renders the template (one module directory per entry, as the scaffolder's `each` step does) and runs the bundle check.
+
+### `vm-instance` (1.5.0, box1-docs#138)
+
+"Add a site": each run of `templates/vm-instance` creates one VM that boots the shared
+install disk of an existing `virtual-machine` source (allowlist `VM_INSTANCE_SOURCES`, which
+mirrors `box1-gitops` `gitops-validate.yaml`; today `site-gateway-os`). There is no source
+repository: the template skips `box1:repository:ensure`, starts with
+`box1:development:resolve-source` and runs the catalog steps after `provision`.
+
+| Phase | Behaviour |
+| --- | --- |
+| Resolve source (`box1:development:resolve-source`) | Refuses a source outside the allowlist and a name that collides with `box1-workloads-dev` `workloads/<name>`, `ci/<name>`, `applications/<name>.yaml`, a repository `box1-org/<name>`, the namespace `<name>-dev` or an Application `<name>`. Reads the source's **approved** state at one pinned `box1-workloads-dev` `main` commit: `box1.org/os-image-digest` and `box1.org/source-revision` from `workloads/<source>/virtualmachine.yaml`. The disk is the one the release pipeline built for that revision, `box1-ci/<source>-disk:<revision>`, and `box1-ci/<source>:<revision>` must equal the approved OS digest, as must the disk's `box1.org/bootc-image` label (read through `imagestreamimages`). (The source's own DataVolume is the disk of its first release and never changes, so after a day-2 release it would boot an older OS.) Outputs `sourceRevision`, `sourceUrl`, `imageDigest`, `diskDigest`. A request that already has a record returns the recorded values, so a later source release never changes an instance in flight. Creates no record. |
+| Bundle check (`validateVmInstanceBundle`) | Exactly `applications/<name>.yaml` and `workloads/<name>/{namespace,updater,admin-access,site,virtualmachine,datavolume,deploy-access,onboarding,kustomization,catalog-info}.yaml`. Mirrors `box1-gitops-validate`'s `vm-instance` rules (#139 plus the #140 rules added in box1-docs#138): VM named after the instance with `box1.org/source-image`, Halted with zero digests; `cloudinitdisk` disk and volume with only `cloudInitNoCloud.secretRef.name: <name>-cloud-init`; no firmware or `ds=` serial; `accessCredentials` by guest agent for `cloud-user` only; no `<name>-cloud-init` Secret and no user/network-data keys in Git; ConfigMap `<name>-site` labelled `box1.org/instance: <name>` with only the #140 keys and patterns; DataVolume `<name>-root` from `box1-ci/<source>-disk` at the zero digest, not yet listed; no PaC Repository; exact observer, cloud-init-observer and status-reader Roles and bindings; `catalog-info.yaml` a `vm-instance` Component that depends on `component:default/<source>`. |
+| Provision | Creates the REQUESTED record (`initialRecord`) from the rendered bundle's source and the approved state, refusing if the approved revision changed after the template rendered. Records `source` (name, revision, image and disk digests, the `box1-workloads-dev` commit and the source's build PipelineRun). Then the usual onboarding PR. |
+| Platform and readiness | Syncs `box1-workloads-dev` and `<name>`. No build barrier. Readiness: namespace; `<name>-updater`, `ci-observe` and `ci-vm-deploy`; the Group pull binding; the observer Roles; the `<name>-status-reader` binding; Application Synced; the VirtualMachine; and **`cloud_init_secret`**: the Secret `<name>-dev/<name>-cloud-init` exists with the labels the #140 assembly script sets. It is read as `PartialObjectMetadata` through the bundle's `<name>-cloud-init-observer` Role (`get` on that one Secret name), so the data is never transferred. Until it exists, readiness waits with "create it with box1-docs runbooks/vm-cloud-init-identity.md (approval required)", promotion is refused and the VM stays Halted; resubmit to resume. |
+| Build | None. `buildResults` adopts the recorded digests after checking that `box1-ci/<source>` and `box1-ci/<source>-disk` still hold them. No PipelineRun and no credential Secret. |
+| Promote | First promotion through the box1-gitops-promote `vm-instance` contract, on this instance only: `os-image-digest`, `build-pipelinerun` (the source's build run), DataVolume url from `box1-ci/<source>-disk@<disk>`, `datavolume.yaml` listed, `runStrategy: Always`. Later promotions belong to the source's release pipeline (one `box1-gitops-promote` per instance); they change only annotations, because DataVolume specs are not updated (box1-docs#139 D-006). |
+| Verify | As `virtual-machine` (OS annotation, root disk `Succeeded`, VM Ready, guest agent, Argo Synced/Healthy), then the **booted digest**: a PipelineRun of the read-only Task `box1-bootc-status` (box1-gitops) as `ci-vm-deploy` runs `sudo bootc status --format json` in the guest over `virtctl ssh` as `box1-status`, with the key Secret `box1-ci/vm-instance-status-ssh`. The booted digest must equal the adopted digest. Without that Secret, verify fails with an approval message (the VM keeps running; resubmit to resume). Saves `DEPLOYMENT_READY` with `deploymentImage` `box1-ci/<source>@<digest>` and `bootedDigest`. |
+| Catalog | `catalogComplete` also needs `bootedDigest` equal to `imageDigest`. The entity is `component:default/<name>` from `box1-workloads-dev/blob/main/workloads/<name>/catalog-info.yaml` (the `catalogEntity` hook); an existing entity is reused only if it is a `vm-instance` Component managed by that Location. |
+
+Prerequisites outside this repository: the box1-gitops PR for box1-docs#138 (the #140
+validator rules, without which `keycloakTokenUrl` fails #139's credential-key heuristic,
+and the `box1-bootc-status` Task); the Hub `get` on `imagestreams` in `box1-ci` (box1-gitops,
+#137); the Hub `get` on `imagestreamimages` in `box1-ci` (same box1-gitops PR); the Secret
+`box1-ci/vm-instance-status-ssh` and, in the source image, the user `box1-status` whose
+authorized key is forced to `sudo /usr/bin/bootc status --format json` and whose sudo allows
+only that (approval items; not `box1-deploy`, which may also upgrade); and, per instance, the `<name>-cloud-init` Secret from the #140 runbook.
+
+Tests:
+- `scripts/test-onboarding-vm-instance.cjs` covers the profile, including the full delivery sequence, the missing cloud-init Secret, resume, and booted-digest mismatch.
+- `scripts/validate.mjs` renders the template for `site-west`, `site-east` and a 35-character name, runs the bundle check, and checks the form's allowlist and #140 patterns.
 
 ## Adding an onboarding profile (1.3.0)
 
@@ -172,14 +234,31 @@ Rules:
   compares their records, markers, PR files, PipelineRuns, stored results, readiness
   checks, verify sequence and action schemas with
   `scripts/fixtures/onboarding-profiles-characterisation.json`, recorded on 1.2.0. Do
-  not regenerate the fixture to make a change pass.
-- Known limits of 1.3.0 that a new profile may have to extend in the Workflow itself
+  not regenerate the fixture to make a change pass. The `profile` enum in the action
+  schemas grows with every profile, so the test compares it restricted to `service`
+  and `virtual-machine` and requires those two to stay first (1.4.0).
+- Optional hooks added in 1.4.0 (box1-docs#137). A profile that omits them keeps the
+  1.3.0 behaviour, and `service` and `virtual-machine` omit them:
+  - `gitopsApplication(w)` names the Argo Application that `platform`, `build` and the
+    promotion sync request use (default `<name>`; `artifact` uses `<name>-ci`);
+  - `buildCredential(w)` returns the GitHub App token request
+    (`{repositories, permissions}`) for the first build's credential Secret (default:
+    the source repository with `contents: read`).
+- Optional hooks added in 1.5.0 (box1-docs#138), declared only by `vm-instance`:
+  - `resolveSource(w, source)` backs `box1:development:resolve-source`, which a template
+    without `box1:repository:ensure` runs first to learn the `sourceRevision` it renders and
+    passes to every later step; other profiles refuse the action;
+  - `catalogEntity(w)` returns `{ref, target, owns(entity), mismatch}`: the entity the
+    catalog actions register, its Location URL and the ownership test (default: the source
+    repository's `catalog-info.yaml` and its `github.com/project-slug`). Like
+    `catalogComplete`, it comes from the profile the record names.
+  The characterisation test compares only the actions recorded on 1.2.0 and requires new
+  actions to be registered after them.
+- Known limits that a new profile may have to extend in the Workflow itself
   (add a handler rather than a profile-name branch):
-  - with a non-null `validateBundle`, `platform` and `build` sync and wait for the
-    Argo Application named `<name>` (`requestServiceSync`, `awaitServiceSync`);
   - `promotionUpdates` can only produce a promotion PR in `box1-workloads-dev`;
-  - `box1:catalog:submit`/`verify`/`ensure` always register `component:default/<name>`
-    from `github.com/box1-org/<name>/…/catalog-info.yaml`;
+  - (lifted in 1.5.0 by `catalogEntity`) `box1:catalog:*` registered only
+    `component:default/<name>` from `github.com/box1-org/<name>/…/catalog-info.yaml`;
   - with `sourceRepository: false` the record is created by `provision`, so the
     template must run the catalog steps after `provision`: `catalogSubmit` on a missing
     record would create an incomplete one.

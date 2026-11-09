@@ -1,0 +1,24 @@
+# Root disk, imported once from the source's install disk box1-ci/${{ values.source }}-disk.
+# Not listed in kustomization.yaml until the first promotion sets the digest of the disk
+# built for the source's approved revision. DataVolume specs are immutable, so a
+# placeholder source must never be created, and later promotions do not change it.
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: "${{ values.name }}-root"
+  namespace: "${{ values.namespace }}"
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: "false"
+spec:
+  source:
+    registry:
+      url: docker://image-registry.openshift-image-registry.svc:5000/box1-ci/${{ values.source }}-disk@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      pullMethod: node
+  storage:
+    storageClassName: lvms-vg1
+    volumeMode: Block
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: ${{ values.rootDiskSize }}
