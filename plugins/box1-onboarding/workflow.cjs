@@ -583,7 +583,7 @@ function artifactComplete(data) { return Boolean(data?.bundleImage&&data.artifac
 const VM_INSTANCE_SOURCES=['site-gateway-os'];
 // The booted-digest check: read-only Task, its ServiceAccount and the deploy key Secret
 // (created outside Git; approval required). The guest user comes from the source image.
-const BOOTED_DIGEST={task:'box1-bootc-status',serviceAccount:'ci-vm-deploy',keySecret:'vm-instance-deploy-ssh',user:'box1-deploy'};
+const BOOTED_DIGEST={task:'box1-bootc-status',serviceAccount:'ci-vm-deploy',keySecret:'vm-instance-status-ssh',user:'box1-status'};
 const HUB_ACCOUNT={kind:'ServiceAccount',name:'developer-hub-onboarding',namespace:'rhdh'};
 const CLOUD_INIT_RUNBOOK='box1-docs runbooks/vm-cloud-init-identity.md';
 // The <instance>-site ConfigMap (box1-docs#140): key -> [required, pattern]. Same allowlist
@@ -626,13 +626,13 @@ function validateVmInstanceBundle(files, name) {
     [name+'-release-observer@'+ns]:[{apiGroups:['kubevirt.io'],resources:['virtualmachines','virtualmachineinstances'],resourceNames:[name],verbs:['get']},{apiGroups:['cdi.kubevirt.io'],resources:['datavolumes'],resourceNames:[name+'-root'],verbs:['get']}],
     [name+'-release-observer@openshift-gitops']:[{apiGroups:['argoproj.io'],resources:['applications'],resourceNames:[name],verbs:['get']}],
     [name+'-cloud-init-observer@'+ns]:[{apiGroups:[''],resources:['secrets'],resourceNames:[name+'-cloud-init'],verbs:['get']}],
-    [name+'-deployer@'+ns]:[{apiGroups:['kubevirt.io'],resources:['virtualmachineinstances'],resourceNames:[name],verbs:['get']},{apiGroups:['subresources.kubevirt.io'],resources:['virtualmachineinstances/portforward'],resourceNames:[name],verbs:['get','update']}],
+    [name+'-status-reader@'+ns]:[{apiGroups:['kubevirt.io'],resources:['virtualmachineinstances'],resourceNames:[name],verbs:['get']},{apiGroups:['subresources.kubevirt.io'],resources:['virtualmachineinstances/portforward'],resourceNames:[name],verbs:['get','update']}],
   };
   const bindingSubjects={
     [name+'-release-observer@'+ns]:[{kind:'ServiceAccount',name:'ci-observe',namespace:'box1-ci'}],
     [name+'-release-observer@openshift-gitops']:[{kind:'ServiceAccount',name:'ci-observe',namespace:'box1-ci'}],
     [name+'-cloud-init-observer@'+ns]:[HUB_ACCOUNT],
-    [name+'-deployer@'+ns]:[{kind:'ServiceAccount',name:BOOTED_DIGEST.serviceAccount,namespace:'box1-ci'}],
+    [name+'-status-reader@'+ns]:[{kind:'ServiceAccount',name:BOOTED_DIGEST.serviceAccount,namespace:'box1-ci'}],
   };
   for(const {file,obj} of objects) {
     const m=obj.metadata;
@@ -644,7 +644,7 @@ function validateVmInstanceBundle(files, name) {
       check(m.name===ns&&m.labels?.['box1.org/workload-profile']==='vm-instance'&&m.labels?.['argocd.argoproj.io/managed-by']==='openshift-gitops','VM instance Namespace must be the managed development namespace with the vm-instance profile');
     } else if(obj.kind==='Role') {
       const rules=roleRules[m.name+'@'+m.namespace];
-      check(rules&&same(obj.rules,rules),'Invalid Role '+m.name+' in '+m.namespace+': only the release observers, the cloud-init Secret observer and the booted-digest deployer, exactly as generated');
+      check(rules&&same(obj.rules,rules),'Invalid Role '+m.name+' in '+m.namespace+': only the release observers, the cloud-init Secret observer and the booted-digest status reader, exactly as generated');
     } else if(obj.kind==='RoleBinding') {
       if(m.name===name+'-image-puller') {
         check(m.namespace==='box1-ci'&&obj.roleRef.name==='system:image-puller'&&obj.roleRef.kind==='ClusterRole'&&same(obj.subjects,[{apiGroup:'rbac.authorization.k8s.io',kind:'Group',name:'system:serviceaccounts:'+ns}]),'Invalid VM registry pull binding');
@@ -688,7 +688,7 @@ function validateVmInstanceBundle(files, name) {
   }
   for(const kind of ['Application','Namespace','ServiceAccount','ConfigMap','VirtualMachine','DataVolume']) check(seen[kind]===1,'VM instance onboarding needs exactly one '+kind);
   check(seen.Secret===2,'VM instance onboarding needs the updater token and admin-ssh Secrets');
-  check(seen.Role===4&&seen.RoleBinding===5,'VM instance onboarding needs the observer, cloud-init observer and deployer Roles and their bindings, and the pull binding');
+  check(seen.Role===4&&seen.RoleBinding===5,'VM instance onboarding needs the observer, cloud-init observer and status-reader Roles and their bindings, and the pull binding');
   check(!seen.Repository,'An instance has no source repository, so no PaC Repository');
   const entity=YAML.parse(files[base+'catalog-info.yaml'].content);
   const ann=entity?.metadata?.annotations||{};
@@ -723,6 +723,11 @@ async function approvedSource(w, source) {
   check(await tag(source,revision)===imageDigest,`box1-ci/${source}:${revision} is not the approved OS digest ${imageDigest}; refusing to pair it with a disk`);
   const diskDigest=await tag(source+'-disk',revision);
   check(diskDigest!==ZERO,'The source disk digest is zero');
+  // The disk's box1.org/bootc-image label (set by box1-bootc-disk) names the OS image it was
+  // built from; it must be the approved digest, because the DataVolume cannot be changed later.
+  const diskImage=await w.kube.get(`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreamimages/${source}-disk@${diskDigest}`);
+  const label=diskImage?.image?.dockerImageMetadata?.Config?.Labels?.['box1.org/bootc-image'];
+  check(label===`box1-ci/${source}@${imageDigest}`,`box1-ci/${source}-disk@${diskDigest} was built from ${label||'an unknown image'}, not the approved box1-ci/${source}@${imageDigest}`);
   return {sourceRevision:revision,sourceUrl:`https://github.com/${ORG}/${source}`,imageDigest,diskDigest,
     source:{name:source,revision,imageDigest,diskDigest,gitopsRevision:ref,buildPipelineRun:a['box1.org/build-pipelinerun']||null,firstReleaseDiskDigest:DIGEST.test(firstDisk||'')?firstDisk:null}};
 }
@@ -770,7 +775,7 @@ function vmInstancePlatformChecks(w) {
     serviceaccounts:async()=>{const values=await Promise.all([[w.ns,w.name+'-updater'],['box1-ci','ci-observe'],['box1-ci',BOOTED_DIGEST.serviceAccount]].map(async([ns,name])=>[ns,name,await w.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
     registry_pull:async()=>{const v=await w.kube.get(`${rbac('box1-ci')}/rolebindings/${w.name}-image-puller`);return v?.roleRef?.name==='system:image-puller'&&v.subjects?.some(s=>s.kind==='Group'&&s.name==='system:serviceaccounts:'+w.ns)||'instance namespace registry pull permission';},
     observer_rbac:async()=>{const values=await Promise.all([w.ns,'openshift-gitops'].map(async ns=>[ns,await w.kube.get(`${rbac(ns)}/roles/${w.name}-release-observer`),await w.kube.get(`${rbac(ns)}/rolebindings/${w.name}-release-observer`)]));const missing=values.find(([ns,role,binding])=>!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'));return missing?missing[0]+' release observer permissions':true;},
-    booted_digest_access:async()=>{const binding=await w.kube.get(`${rbac(w.ns)}/rolebindings/${w.name}-deployer`);return binding?.roleRef?.name===w.name+'-deployer'&&binding.subjects?.some(s=>s.name===BOOTED_DIGEST.serviceAccount&&s.namespace==='box1-ci')||'booted-digest check permission ('+w.name+'-deployer)';},
+    booted_digest_access:async()=>{const binding=await w.kube.get(`${rbac(w.ns)}/rolebindings/${w.name}-status-reader`);return binding?.roleRef?.name===w.name+'-status-reader'&&binding.subjects?.some(s=>s.name===BOOTED_DIGEST.serviceAccount&&s.namespace==='box1-ci')||'booted-digest check permission ('+w.name+'-status-reader)';},
     argo_application:async()=>{const v=await w.kube.get(APPS+'/'+w.name);return v?.spec?.destination?.namespace===w.ns&&v.status?.sync?.status==='Synced'||'Argo CD Application Synced in '+w.ns;},
     virtual_machine:async()=>await w.kube.get(`/apis/kubevirt.io/v1/namespaces/${w.ns}/virtualmachines/${w.name}`)?true:'initial VirtualMachine',
     // The VM stays Halted (no promotion) until its identity Secret exists. Metadata only.
@@ -904,7 +909,12 @@ class Kube {
   get(p) { return this.request('GET',p,undefined,true); }
   // Object metadata only (PartialObjectMetadata), for objects whose content the plugin must
   // never receive, such as Secrets. RBAC still needs `get` on the object (box1-docs#138).
-  metadata(p) { return this.request('GET',p,undefined,true,'application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1'); }
+  async metadata(p) {
+    const value=await this.request('GET',p,undefined,true,'application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1');
+    // Fail closed if the server ignored `as=`: never hold an object's content.
+    check(value===null||(value.kind==='PartialObjectMetadata'&&!('data' in value)&&!('stringData' in value)&&!('spec' in value)),'Kubernetes did not return metadata only for '+p.split('/').slice(0,-1).join('/'));
+    return value;
+  }
 }
 class Workflow {
   constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.profile=validateProfile(ctx.input.profile||'service'); this.handlers=PROFILES[this.profile]; this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); this.activeWaits=new Set(); this.saveQueue=Promise.resolve(); }

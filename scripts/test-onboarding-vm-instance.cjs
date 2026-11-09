@@ -25,6 +25,7 @@ function sourceFiles({revision=sha,os=image,dvDigest=firstDisk,profile='virtual-
 const streams=({revision=sha,os=image,diskTag=disk}={})=>({
   [IS+source]:{status:{tags:[{tag:'development',items:[{image:os}]},{tag:revision,items:[{image:os}]}]}},
   [IS+source+'-disk']:{status:{tags:[{tag:'1'.repeat(40),items:[{image:firstDisk}]},...(diskTag?[{tag:revision,items:[{image:diskTag}]}]:[])]}},
+  [`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreamimages/${source}-disk@${diskTag}`]:{image:{dockerImageMetadata:{Config:{Labels:{'box1.org/bootc-image':`box1-ci/${source}@${os}`}}}}},
 });
 // GitHub double: box1-workloads-dev main and the source workload; `taken` paths exist.
 function github({taken=[],files=sourceFiles()}={}){
@@ -62,7 +63,7 @@ function cluster(objects={},{secrets={}}={}){
 }
 const secretPath=`/api/v1/namespaces/${ns}/secrets/${name}-cloud-init`;
 const assembled={metadata:{name:name+'-cloud-init',labels:{'box1.org/instance':name,'box1.org/cloud-init':'userdata'}}};
-const deployKey={['/api/v1/namespaces/box1-ci/secrets/vm-instance-deploy-ssh']:{metadata:{name:'vm-instance-deploy-ssh'}}};
+const deployKey={['/api/v1/namespaces/box1-ci/secrets/vm-instance-status-ssh']:{metadata:{name:'vm-instance-status-ssh'}}};
 const readyObjects=()=>{
   const o={
     ['/api/v1/namespaces/'+ns]:{status:{phase:'Active'}},
@@ -70,7 +71,7 @@ const readyObjects=()=>{
     '/api/v1/namespaces/box1-ci/serviceaccounts/ci-observe':{},
     '/api/v1/namespaces/box1-ci/serviceaccounts/ci-vm-deploy':{},
     [`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${name}-image-puller`]:{roleRef:{name:'system:image-puller'},subjects:[{kind:'Group',name:'system:serviceaccounts:'+ns}]},
-    [`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${name}-deployer`]:{roleRef:{name:name+'-deployer'},subjects:[{kind:'ServiceAccount',name:'ci-vm-deploy',namespace:'box1-ci'}]},
+    [`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${name}-status-reader`]:{roleRef:{name:name+'-status-reader'},subjects:[{kind:'ServiceAccount',name:'ci-vm-deploy',namespace:'box1-ci'}]},
     [APPS+name]:{spec:{destination:{namespace:ns}},status:{sync:{status:'Synced',revision:merge},health:{status:'Healthy'}}},
     [`/apis/kubevirt.io/v1/namespaces/${ns}/virtualmachines/${name}`]:{metadata:{annotations:{'box1.org/os-image-digest':image}},status:{conditions:[{type:'Ready',status:'True'}]}},
     [`/apis/kubevirt.io/v1/namespaces/${ns}/virtualmachineinstances/${name}`]:{status:{conditions:[{type:'AgentConnected',status:'True'}]}},
@@ -129,7 +130,7 @@ test('bundle validation mirrors the #139 and #140 rules',async()=>{
   rejects(edit(files,'admin-access.yaml','  key1:','  userdata:'),/Only SSH public keys/);
   rejects(edit(files,'onboarding.yaml','  - "site-west-cloud-init"','  - "site-west-admin-ssh"'),/Invalid Role site-west-cloud-init-observer/);
   rejects(edit(files,'onboarding.yaml','  name: developer-hub-onboarding\n','  name: default\n'),/Invalid RoleBinding site-west-cloud-init-observer/);
-  rejects(edit(files,'deploy-access.yaml','  - get\n  - update','  - get\n  - update\n  - create'),/Invalid Role site-west-deployer/);
+  rejects(edit(files,'deploy-access.yaml','  - get\n  - update','  - get\n  - update\n  - create'),/Invalid Role site-west-status-reader/);
   rejects(edit(files,'catalog-info.yaml','  type: vm-instance','  type: service'),/vm-instance Component that depends on its source/);
   const extra=structuredClone(files);extra[`workloads/${name}/onboarding.yaml`].content+=`---\napiVersion: pipelinesascode.tekton.dev/v1alpha1\nkind: Repository\nmetadata:\n  name: ${name}\n  namespace: box1-ci\nspec:\n  url: https://github.com/box1-org/${name}\n`;
   rejects(extra,/Unexpected generated resource for a VM instance: Repository/);
@@ -168,6 +169,7 @@ test('resolve-source refuses a source that is not ready to be adopted',async()=>
     [{gh:github({files:{...sourceFiles(),'datavolume.yaml':undefined}})},/has no workloads\/site-gateway-os\/datavolume.yaml/],
     [{kube:cluster(streams({diskTag:null}))},/box1-ci\/site-gateway-os-disk:c{40} does not exist/],
     [{kube:cluster({[IS+source]:{status:{tags:[{tag:sha,items:[{image:'sha256:'+'7'.repeat(64)}]}]}}})},/is not the approved OS digest/],
+    [{kube:cluster({[`/apis/image.openshift.io/v1/namespaces/box1-ci/imagestreamimages/${source}-disk@${disk}`]:{image:{dockerImageMetadata:{Config:{Labels:{'box1.org/bootc-image':`box1-ci/${source}@sha256:${'7'.repeat(64)}`}}}}}})},/was built from box1-ci\/site-gateway-os@sha256:7{64}, not the approved/],
   ];
   for(const [options,pattern] of cases){const w=workflow({data:null,input:{source},...options});await assert.rejects(w.resolveSource(),pattern);}
 });
@@ -265,7 +267,7 @@ test('verify: VM, guest agent, Argo, then the booted digest through box1-bootc-s
   assert.equal(run.spec.taskRunTemplate.serviceAccountName,'ci-vm-deploy');
   const task=run.spec.pipelineSpec.tasks[0];
   assert.equal(task.taskRef.params.find(p=>p.name==='name').value,'box1-bootc-status');
-  assert.deepEqual(Object.fromEntries(task.params.map(p=>[p.name,p.value])),{'application-name':name,'application-namespace':ns,'ssh-user':'box1-deploy','ssh-key-secret':'vm-instance-deploy-ssh'});
+  assert.deepEqual(Object.fromEntries(task.params.map(p=>[p.name,p.value])),{'application-name':name,'application-namespace':ns,'ssh-user':'box1-status','ssh-key-secret':'vm-instance-status-ssh'});
   assert.equal(w.data.phase,'DEPLOYMENT_READY');
   assert.equal(w.data.deploymentImage,`image-registry.openshift-image-registry.svc:5000/box1-ci/${source}@${image}`);
   assert.equal(w.data.bootedDigest.digest,image);
@@ -283,7 +285,7 @@ test('verify fails when the guest booted another digest, and when no deploy key 
   await assert.rejects(w.verify(),/booted sha256:9{64}, not the approved sha256:a{64}/);
   assert.notEqual(w.data.phase,'DEPLOYMENT_READY');
   const nokey=workflow({kube:cluster({...readyObjects()}),data:data()});
-  await assert.rejects(nokey.verify(),/deploy key Secret box1-ci\/vm-instance-deploy-ssh does not exist. Creating it is an approval item/);
+  await assert.rejects(nokey.verify(),/deploy key Secret box1-ci\/vm-instance-status-ssh does not exist. Creating it is an approval item/);
 });
 
 test('verify retries a failed booted-digest check under a new name, at most three times',async()=>{
@@ -332,4 +334,14 @@ test('the whole delivery sequence for one instance, without a repository or a bu
   const before=kube.calls.length;w.pullRequest=async()=>{throw new Error('must not open another PR');};
   await w.provision();await w.platform();await w.buildPhase();
   assert.deepEqual(kube.calls.slice(before),[]);
+});
+
+test('Kube.metadata fails closed when the server returns more than metadata',async()=>{
+  const {Kube}=require('../plugins/box1-onboarding/workflow.cjs');
+  const k=new Kube();
+  k.request=async()=>({kind:'Secret',metadata:{name:'x'},data:{userdata:'c2VjcmV0'}});
+  await assert.rejects(k.metadata('/api/v1/namespaces/a/secrets/x'),/did not return metadata only for \/api\/v1\/namespaces\/a\/secrets$/);
+  k.request=async(method,p,body,missing,accept)=>{assert.equal(accept,'application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1');return {kind:'PartialObjectMetadata',metadata:{name:'x'}};};
+  assert.equal((await k.metadata('/api/v1/namespaces/a/secrets/x')).metadata.name,'x');
+  k.request=async()=>null;assert.equal(await k.metadata('/p'),null);
 });
