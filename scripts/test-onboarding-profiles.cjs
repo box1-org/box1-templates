@@ -80,9 +80,9 @@ for(const profile of ['service','virtual-machine']){
 }
 
 test('a test-only profile is one table entry: it joins the action enum and supplies its record and marker fields',async()=>{
-  assert.deepEqual(profileInputSchema().enum,['service','virtual-machine','artifact']);
+  assert.deepEqual(profileInputSchema().enum,['service','virtual-machine','artifact','vm-instance']);
   await withProfile('test-artifact',noWorkload(),async()=>{
-    assert.deepEqual(profileInputSchema().enum,['service','virtual-machine','artifact','test-artifact']);
+    assert.deepEqual(profileInputSchema().enum,['service','virtual-machine','artifact','vm-instance','test-artifact']);
     // Repository: record and marker fields come from the entry.
     const r=workflow('site-gateway','test-artifact',{data:null,input:{owner:'user:default/mike',visibility:'private',description:'Test artifact'}});
     r.ctx.workspacePath=fs.mkdtempSync(path.join(os.tmpdir(),'box1-profile-'));fs.mkdirSync(path.join(r.ctx.workspacePath,'application'));

@@ -129,5 +129,5 @@ test('the VM template runs the same delivery phases with the virtual-machine pro
  assert(actions.indexOf('box1:catalog:submit')<actions.indexOf('box1:development:provision'));assert.equal(actions.at(-1),'box1:catalog:verify');
  // The profile enum is generated from the dispatch table; the Hub schema is unchanged.
  assert.match(registered,/profile:profileInputSchema\(\)/);
- assert.deepEqual(profileInputSchema(),{type:'string',enum:['service','virtual-machine','artifact'],default:'service',description:'Onboarding profile; must match the profile recorded when the repository was created'});
+ assert.deepEqual(profileInputSchema(),{type:'string',enum:['service','virtual-machine','artifact','vm-instance'],default:'service',description:'Onboarding profile; must match the profile recorded when the repository was created'});
 });

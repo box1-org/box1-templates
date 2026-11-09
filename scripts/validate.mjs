@@ -389,3 +389,92 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
   for (const name of ['box1-x', 'quarkus-reference', 'Upper', 'a'.repeat(36)]) assert(!checkMonoForm({ ...base, name }), `Accepted unsafe name: ${name}`);
   console.log('PASS quarkus-monorepo rejected unsafe modules, consumers, paths and names');
 }
+
+// ---- templates/vm-instance (vm-instance onboarding profile, box1-docs#138) ----
+{
+  const { createRequire } = await import('node:module');
+  const { validateVmInstanceBundle, validateVmBundle, VM_INSTANCE_SOURCES, filesAt } = createRequire(import.meta.url)('../plugins/box1-onboarding/workflow.cjs');
+  const viSource = path.join(root, 'templates/vm-instance');
+  const viTemplate = YAML.parse(fs.readFileSync(path.join(viSource, 'template.yaml'), 'utf8'));
+  // The scaffolder form is the union of the parameter pages.
+  const pages = viTemplate.spec.parameters;
+  const checkViForm = ajv.compile({ type: 'object', required: pages.flatMap(p => p.required ?? []), properties: Object.assign({}, ...pages.map(p => p.properties)) });
+  assert(rootLocation.spec.targets.includes('./templates/vm-instance/template.yaml'), 'vm-instance must be registered in the root Location');
+  assert.equal(viTemplate.spec.type, 'vm-instance');
+  assert.deepEqual(pages[0].properties.source.enum, VM_INSTANCE_SOURCES, 'The template source enum is the plugin allowlist (which mirrors box1-gitops VM_INSTANCE_SOURCES)');
+  const stepActions = viTemplate.spec.steps.map(s => s.action);
+  assert(!stepActions.includes('box1:repository:ensure'), 'An instance has no source repository');
+  assert.equal(stepActions[0], 'box1:development:resolve-source', 'The source revision is resolved before the bundle is rendered');
+  assert(stepActions.indexOf('box1:catalog:submit') > stepActions.indexOf('box1:development:provision'), 'Catalog steps run after provision creates the record');
+  assert.equal(stepActions.at(-1), 'box1:catalog:verify');
+  assert.deepEqual(stepActions.filter(a => a.startsWith('box1:development:') && a !== 'box1:development:resolve-source'), ['provision', 'platform', 'build', 'promote', 'verify'].map(p => 'box1:development:' + p));
+  const onboardingSteps = viTemplate.spec.steps.filter(s => s.action.startsWith('box1:development:'));
+  assert(onboardingSteps.every(s => s.input.profile === 'vm-instance'), 'Every onboarding step must use the vm-instance profile');
+  assert(onboardingSteps.filter(s => s.action !== 'box1:development:resolve-source').every(s => s.input.sourceRevision === '${{ steps.source.output.sourceRevision }}'), 'Every phase passes the resolved source revision');
+  const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGoldenPathValidationKeyGoldenPathValidation admin@box1';
+  const tokenUrl = 'https://keycloak.apps.ocp.box1.org/auth/realms/box1/protocol/openid-connect/token';
+  const full = { assetServiceUrl: 'https://asset-service-dev.apps.ocp.box1.org', kafkaBootstrapServers: 'box1-kafka-kafka-bootstrap.box1-kafka.svc:9092', otlpEndpoint: 'http://box1-collector.box1-observability.svc:4318' };
+  for (const [name, extra] of [['site-west', { siteId: 'site_ds9', ...full }], ['site-east', { siteId: 'site_spacedock', cpuCores: 1, memory: '2Gi', rootDiskSize: '12Gi' }], ['s'.repeat(35), { siteId: 'site_x' }]]) {
+    const parameters = { name, source: 'site-gateway-os', owner: 'user:default/mike', adminSshPublicKey: key, cpuCores: 2, memory: '4Gi', rootDiskSize: '20Gi', keycloakClientId: name.slice(0, 63), keycloakTokenUrl: tokenUrl, assetServiceUrl: '', kafkaBootstrapServers: '', otlpEndpoint: '', ...extra };
+    assert(checkViForm(parameters), JSON.stringify(checkViForm.errors));
+    const values = { ...parameters, namespace: name + '-dev', sourceRevision: 'c'.repeat(40) };
+    const target = path.join(root, '.validation/vm-instance', name);
+    fs.rmSync(target, { recursive: true, force: true });
+    renderTree(path.join(viSource, 'gitops'), path.join(target, 'gitops'), values);
+    // The plugin's bundle check is the gate the onboarding action applies.
+    const files = await filesAt(path.join(target, 'gitops'));
+    validateVmInstanceBundle(files, name);
+    assert.throws(() => validateVmBundle(files, name), 'An instance bundle is not a virtual-machine bundle');
+    const resources = YAML.parseAllDocuments(execFileSync(kubectl, ['kustomize', path.join(target, `gitops/workloads/${name}`)], { encoding: 'utf8' })).map(d => d.toJSON());
+    const vm = resources.find(r => r.kind === 'VirtualMachine');
+    assert.equal(vm.spec.runStrategy, 'Halted');
+    assert.equal(vm.metadata.annotations['box1.org/source-image'], 'site-gateway-os');
+    assert.equal(vm.metadata.annotations['box1.org/os-image-digest'], 'sha256:' + '0'.repeat(64));
+    assert.equal(vm.metadata.annotations['box1.org/source-revision'], 'c'.repeat(40));
+    assert.equal(vm.metadata.labels['backstage.io/kubernetes-id'], name);
+    assert.equal(vm.spec.template.spec.domain.cpu.cores, parameters.cpuCores);
+    assert.equal(vm.spec.template.spec.domain.memory.guest, parameters.memory);
+    assert.deepEqual(vm.spec.template.spec.volumes.find(v => v.name === 'cloudinitdisk'), { name: 'cloudinitdisk', cloudInitNoCloud: { secretRef: { name: `${name}-cloud-init` } } });
+    assert(!resources.some(r => r.kind === 'DataVolume'), 'Unbuilt instance bundle must not render its DataVolume');
+    assert(!resources.some(r => r.kind === 'Repository'), 'An instance has no PaC Repository');
+    assert(!resources.some(r => r.kind === 'Secret' && r.metadata.name === `${name}-cloud-init`), 'The cloud-init Secret is never rendered');
+    assert(!resources.some(r => r.kind === 'Component'), 'catalog-info.yaml is not a Kubernetes resource');
+    assert.equal(resources.find(r => r.kind === 'Namespace').metadata.labels['box1.org/workload-profile'], 'vm-instance');
+    const site = resources.find(r => r.kind === 'ConfigMap');
+    assert.equal(site.metadata.name, `${name}-site`);
+    assert.equal(site.metadata.labels['box1.org/instance'], name);
+    const expected = { siteId: parameters.siteId, keycloakClientId: parameters.keycloakClientId, keycloakTokenUrl: tokenUrl, ...Object.fromEntries(['assetServiceUrl', 'kafkaBootstrapServers', 'otlpEndpoint'].filter(k => parameters[k]).map(k => [k, parameters[k]])) };
+    assert.deepEqual(site.data, expected, 'Optional site keys are rendered only when set');
+    const dvText = fs.readFileSync(path.join(target, `gitops/workloads/${name}/datavolume.yaml`), 'utf8');
+    assert.match(dvText, new RegExp(`^      url: docker://image-registry\\.openshift-image-registry\\.svc:5000/box1-ci/site-gateway-os-disk@sha256:0{64}$`, 'm'), 'Promotion contract: 6-space DataVolume url line from the source disk');
+    assert.equal(YAML.parse(dvText).spec.storage.resources.requests.storage, parameters.rootDiskSize);
+    assert.match(fs.readFileSync(path.join(target, `gitops/workloads/${name}/kustomization.yaml`), 'utf8'), /^  - virtualmachine\.yaml$/m, 'Promotion contract: kustomization resource line');
+    const entity = YAML.parse(fs.readFileSync(path.join(target, `gitops/workloads/${name}/catalog-info.yaml`), 'utf8'));
+    assert.equal(entity.metadata.name, name);
+    assert.equal(entity.spec.type, 'vm-instance');
+    assert.equal(entity.spec.owner, parameters.owner);
+    assert.deepEqual(entity.spec.dependsOn, ['component:default/site-gateway-os']);
+    assert.equal(entity.metadata.annotations['box1.org/site-id'], parameters.siteId);
+    const context = { parameters, steps: { source: { output: { sourceRevision: 'c'.repeat(40) } } } };
+    for (const step of viTemplate.spec.steps) {
+      const action = actions.find(a => a.id === step.action);
+      if (actionsFile) assert(action, `Installed action missing: ${step.action}`);
+      if (action?.schema?.input) {
+        const input = JSON.parse(env.renderString(JSON.stringify(step.input), context));
+        const check = ajv.compile(action.schema.input);
+        assert(check(input), `${step.id}: ${JSON.stringify(check.errors)}`);
+      }
+    }
+    console.log(`PASS vm-instance ${name}: render, plugin bundle check, Kustomize, site ConfigMap, cloud-init reference, catalog${actionsFile ? ', installed actions' : ''}`);
+  }
+  const base = { name: 'site-west', source: 'site-gateway-os', owner: 'user:default/mike', adminSshPublicKey: key, siteId: 'site_ds9', keycloakClientId: 'site-west', keycloakTokenUrl: tokenUrl };
+  assert(checkViForm(base));
+  for (const source of ['vm-golden-check', 'legacy-erp', '']) assert(!checkViForm({ ...base, source }), `Accepted a source outside the allowlist: ${source}`);
+  for (const name of ['box1-site', 'quarkus-reference', 'Upper', 'a'.repeat(36)]) assert(!checkViForm({ ...base, name }), `Accepted unsafe instance name: ${name}`);
+  for (const siteId of ['Site', 'site-ds9', 's', 'site ds9']) assert(!checkViForm({ ...base, siteId }), `Accepted invalid siteId: ${siteId}`);
+  for (const keycloakTokenUrl of ['http://keycloak.example/token', 'https://user@keycloak.example/token', 'https://keycloak.example/token?x=1', 'https://keycloak.example/$x', 'https://keycloak.example/a b', '"https://k.example"']) assert(!checkViForm({ ...base, keycloakTokenUrl }), `Accepted unsafe token URL: ${keycloakTokenUrl}`);
+  for (const kafkaBootstrapServers of ['kafka', 'kafka:9092;rm', 'kafka:9092, other:9092']) assert(!checkViForm({ ...base, kafkaBootstrapServers }), `Accepted invalid bootstrap servers: ${kafkaBootstrapServers}`);
+  for (const otlpEndpoint of ['grpc://c:4317', 'http://c:4318/?a']) assert(!checkViForm({ ...base, otlpEndpoint }), `Accepted invalid OTLP endpoint: ${otlpEndpoint}`);
+  for (const adminSshPublicKey of ['', '-----BEGIN OPENSSH PRIVATE KEY-----']) assert(!checkViForm({ ...base, adminSshPublicKey }), 'Accepted invalid SSH public key');
+  console.log('PASS vm-instance rejected sources outside the allowlist, unsafe names, site IDs and endpoints');
+}

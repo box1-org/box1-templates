@@ -1,0 +1,43 @@
+# Booted-digest check (box1-docs#138): the onboarding verify runs the read-only Task
+# box1-bootc-status as box1-ci/ci-vm-deploy. It uses `virtctl ssh` as guest user
+# box1-deploy (from the source image, sudo limited to `bootc status --format json`)
+# with the private key Secret box1-ci/vm-instance-deploy-ssh, created outside Git.
+# This grants ci-vm-deploy only what `virtctl ssh` needs on this instance.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "${{ values.name }}-deployer"
+  namespace: "${{ values.namespace }}"
+rules:
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachineinstances
+  resourceNames:
+  - "${{ values.name }}"
+  verbs:
+  - get
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachineinstances/portforward
+  resourceNames:
+  - "${{ values.name }}"
+  verbs:
+  - get
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "${{ values.name }}-deployer"
+  namespace: "${{ values.namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "${{ values.name }}-deployer"
+subjects:
+- kind: ServiceAccount
+  name: ci-vm-deploy
+  namespace: box1-ci
