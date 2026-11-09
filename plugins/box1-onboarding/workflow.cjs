@@ -16,14 +16,66 @@ const LEASES = '/apis/coordination.k8s.io/v1/namespaces/rhdh/leases';
 const DELIVERY_PHASES = ['provision','platform','buildPhase','promote','verify'];
 const NAME = /^(?!quarkus-reference$)(?!orders-service$)(?!rhdh$)(?!default$)(?!box1-)(?!openshift-)(?!kube-)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 function check(ok, message) { if (!ok) throw new Error(message); }
-// Onboarding profiles. 'service' is the original Quarkus path and must stay
-// byte-for-byte compatible with records and markers written by earlier releases.
 const ZERO='sha256:'+'0'.repeat(64);
+// ---- Onboarding profiles: the dispatch table -------------------------------------
+// Every profile-specific behaviour lives in its entry here. Workflow phases call these
+// handlers and never test the profile name, so adding a profile is one entry plus its
+// handlers (plugins/box1-onboarding/README.md, "Adding an onboarding profile").
+//
+// 'service' is the original Quarkus path and must stay byte-for-byte compatible with
+// records and markers written by earlier releases: it adds no `profile` key.
+//
+// Entry contract. `w` is the Workflow: w.name, w.ns, w.profile, w.data (the state
+// record), w.kube, w.wait(label,seconds,observe), w.content(repo,file), w.save(phase,extra),
+// w.ctx.output(key,value). A handler set to null declares the phase absent.
+//
+//   templateVersion   string. Stored in the record and the repository marker.
+//   commitMessage     string. Skeleton commit message in the new source repository.
+//   sourceRepository  boolean, default true. false: the profile has no source
+//                     repository and box1:repository:ensure is refused.
+//   initialRecord(w)  async -> object | null. Only for sourceRepository:false. When no
+//                     record exists, box1:development:provision creates the REQUESTED
+//                     record from these fields (it must include sourceRevision).
+//   recordFields(w)   -> object. Keys added to the REQUESTED record after templateVersion.
+//   markerFields(w)   -> object. Keys appended to .box1/onboarding.json.
+//   validateBundle(files,name) -> files | null. Checks the rendered GitOps bundle and
+//                     returns it. null: no GitOps bundle, so the onboarding PR, the
+//                     Application sync and the promotion are skipped.
+//   buildBarrier(w)   async | null. Build prerequisites, waited for by box1:development:platform.
+//   platformChecks(w) -> {condition: async () => true | 'pending reason'} | null.
+//                     Readiness set observed alongside the build; null: none.
+//   buildSpec(w,secretName) -> PipelineRun spec | null. The first build. null: no
+//                     PipelineRun and no build credential.
+//   buildResults(w,run) -> object. Fields stored with IMAGE_BUILT (normally imageDigest).
+//                     Throws to reject the results. `run` is the succeeded PipelineRun, or
+//                     null when buildSpec is null (the handler may then be async, for
+//                     example to adopt already approved digests). Both buildSpec and
+//                     buildResults null: the profile has no build at all.
+//   promotionUpdates(w,files) async -> files | null. Contents of the first-release
+//                     promotion PR in box1-workloads-dev. null: no promotion PR or sync.
+//   verify(w)         async | null. Waits for the delivered state, saves DEPLOYMENT_READY
+//                     (or the profile's equivalent) and sets the task outputs.
+//   catalogComplete(data) -> boolean. Precondition of box1:catalog:ensure, evaluated
+//                     against the stored record of the profile it names.
 const PROFILES={
-  service:{templateVersion:'1.1.0',commitMessage:'Create Quarkus service from the Box1 golden path'},
-  'virtual-machine':{templateVersion:'1.0.0',commitMessage:'Create RHEL image mode VM from the Box1 golden path'},
+  service:{
+    templateVersion:'1.1.0',commitMessage:'Create Quarkus service from the Box1 golden path',
+    recordFields:()=>({}),markerFields:()=>({}),
+    validateBundle,buildBarrier:serviceBuildBarrier,platformChecks:servicePlatformChecks,
+    buildSpec:serviceBuildSpec,buildResults:serviceBuildResults,
+    promotionUpdates:servicePromotionUpdates,verify:serviceVerify,catalogComplete:deploymentComplete,
+  },
+  'virtual-machine':{
+    templateVersion:'1.0.0',commitMessage:'Create RHEL image mode VM from the Box1 golden path',
+    recordFields:w=>({profile:w.profile}),markerFields:w=>({profile:w.profile}),
+    validateBundle:validateVmBundle,buildBarrier:vmBuildBarrier,platformChecks:vmPlatformChecks,
+    buildSpec:vmBuildSpec,buildResults:vmBuildResults,
+    promotionUpdates:vmPromotionUpdates,verify:vmVerify,catalogComplete:deploymentComplete,
+  },
 };
 function validateProfile(profile) { check(Object.hasOwn(PROFILES,profile),'Unsupported onboarding profile'); return profile; }
+// The `profile` input of the onboarding actions. Its enum is the dispatch table.
+function profileInputSchema() { return {type:'string',enum:Object.keys(PROFILES),default:'service',description:'Onboarding profile; must match the profile recorded when the repository was created'}; }
 function validateName(name) { check(typeof name === 'string' && name.length >= 3 && name.length <= 35 && NAME.test(name), 'Only new, non-reserved development service names are allowed'); return name; }
 function blobSha(content) { return crypto.createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex'); }
 function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
@@ -161,6 +213,170 @@ function validateVmBundle(files, name) {
   check(same(k.resources, ['namespace.yaml','updater.yaml','admin-access.yaml','virtualmachine.yaml','onboarding.yaml']) && !k.bases && !k.components && !k.patches && !k.generators && !k.transformers && !k.images && !k.configMapGenerator && !k.secretGenerator, 'Invalid initial VM Kustomization: the DataVolume is listed only by the first promotion');
   return files;
 }
+// ---- profile handlers --------------------------------------------------------------
+// Each handler receives the Workflow `w`; see the PROFILES contract above.
+function requireImageDigest(w) { check(w.data?.imageDigest,'Cannot verify deployment without an image digest'); }
+function imageDigestResult(run) {
+  const digest=(run.status.results||[]).find(r=>r.name==='image-digest')?.value;
+  check(/^sha256:[a-f0-9]{64}$/.test(digest),'Initial CI did not return an immutable image digest');
+  return digest;
+}
+// A verified development deployment with both PRs merged.
+function deploymentComplete(data) { return Boolean(data?.deploymentImage && data.onboardingPR?.merged && data.promotionPR?.merged); }
+// service profile ---------------------------------------------------------------------
+async function serviceBuildBarrier(w) {
+  await w.wait('initial build prerequisites',300,async()=>{
+    const [namespace,serviceAccount,push]=await Promise.all([
+      w.kube.get('/api/v1/namespaces/'+w.ns),
+      w.kube.get('/api/v1/namespaces/box1-ci/serviceaccounts/ci-build'),
+      w.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder'),
+    ]);
+    if(namespace?.status?.phase!=='Active')return w.ns+' Namespace Active';
+    if(!serviceAccount)return 'box1-ci/ci-build ServiceAccount';
+    if(push?.roleRef?.name!=='system:image-builder'||!push.subjects?.some(s=>s.name==='ci-build'&&s.namespace==='box1-ci'))return 'CI registry push permission';
+    return true;
+  });
+}
+function servicePlatformChecks(w) {
+  return {
+    namespace:async()=>{const v=await w.kube.get('/api/v1/namespaces/'+w.ns);return v?.status?.phase==='Active'||w.ns+' Namespace Active';},
+    serviceaccounts:async()=>{const values=await Promise.all([[w.ns,w.name],['box1-ci','ci-build'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']].map(async([ns,name])=>[ns,name,await w.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
+    registry_pull:async()=>{const v=await w.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${w.name}-image-puller`);return v?.roleRef?.name==='system:image-puller'&&v.subjects?.some(s=>s.name===w.name&&s.namespace===w.ns)||'service registry pull permission';},
+    registry_push:async()=>{const v=await w.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder');return v?.roleRef?.name==='system:image-builder'&&v.subjects?.some(s=>s.name==='ci-build'&&s.namespace==='box1-ci')||'CI registry push permission';},
+    observer_rbac:async()=>{const values=await Promise.all([w.ns,'openshift-gitops'].map(async ns=>[ns,await w.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/roles/${w.name}-release-observer`),await w.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${w.name}-release-observer`)]));const missing=values.find(([ns,role,binding])=>!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'));return missing?missing[0]+' release observer permissions':true;},
+    pac_repository:async()=>{const v=await w.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+w.name);return v?.spec?.url===`https://github.com/${ORG}/${w.name}`||'PAC Repository registration';},
+    argo_application:async()=>{const v=await w.kube.get(APPS+'/'+w.name);return v?.spec?.destination?.namespace===w.ns&&v.status?.sync?.status==='Synced'||'Argo CD Application Synced in '+w.ns;},
+    deployment:async()=>await w.kube.get(`/apis/apps/v1/namespaces/${w.ns}/deployments/${w.name}`)?true:'initial Deployment',
+  };
+}
+function serviceBuildSpec(w, secretName) {
+  return {taskRunTemplate:{serviceAccountName:'ci-build'},timeouts:{pipeline:'45m'},pipelineSpec:{tasks:[{name:'build',taskRef:{resolver:'cluster',params:[{name:'kind',value:'task'},{name:'name',value:'box1-quarkus-maven'},{name:'namespace',value:'box1-ci'}]},params:[{name:'revision',value:w.data.sourceRevision},{name:'source-repo',value:ORG+'/'+w.name},{name:'git-auth-secret',value:secretName},{name:'push-image',value:'true'},{name:'image-name',value:w.name}]}],results:[{name:'image-digest',value:'$(tasks.build.results.image-digest)'}]}};
+}
+function serviceBuildResults(w, run) { return {imageDigest:imageDigestResult(run)}; }
+async function servicePromotionUpdates(w, files) {
+  const paths=[`workloads/${w.name}/kustomization.yaml`,`workloads/${w.name}/deployment.yaml`];const updates={};
+  for(const file of paths) updates[file]={...files[file]};
+  check(updates[paths[0]].content.includes('digest: sha256:'+'0'.repeat(64)),'First release requires the unbuilt development image');
+  updates[paths[0]].content=updates[paths[0]].content.replace('digest: sha256:'+'0'.repeat(64),'digest: '+w.data.imageDigest);
+  updates[paths[1]].content=updates[paths[1]].content.replace(/^  replicas: 0$/m,'  replicas: 1').replace(/^    box1\.org\/build-pipelinerun: .+$/m,'    box1.org/build-pipelinerun: box1-ci/'+w.data.pipelineName);
+  check(updates[paths[1]].content.includes('box1.org/source-revision: '+w.data.sourceRevision),'Initial source revision drifted');
+  for(const file of paths) {
+    const live=await w.content('box1-workloads-dev',file);
+    check(live===files[file].content||live===updates[file].content,'First-release GitOps content drifted: '+file);
+  }
+  return updates;
+}
+async function serviceVerify(w) {
+  requireImageDigest(w);
+  const image=`image-registry.openshift-image-registry.svc:5000/box1-ci/${w.name}@${w.data.imageDigest}`;
+  await w.wait('first deployment and public endpoint',900,async()=>{
+    const app=await w.kube.get(APPS+'/'+w.name);const dep=await w.kube.get(`/apis/apps/v1/namespaces/${w.ns}/deployments/${w.name}`);
+    const sync=w.data.promotionSync,operation=app?.status?.operationState;
+    if(sync?.requestedAt&&['Error','Failed'].includes(operation?.phase)&&Date.parse(operation.startedAt)>=Date.parse(sync.requestedAt)-5000)throw new Error(syncDetails(app,w.name,sync.revision));
+    if(app?.status?.sync?.status!=='Synced'||app?.status?.health?.status!=='Healthy')return 'Argo CD Synced and Healthy';
+    if(dep?.spec?.template?.spec?.containers[0].image!==image||dep.status?.observedGeneration!==dep.metadata.generation||!dep.status?.availableReplicas)return 'digest-pinned Deployment Available';
+    try{
+      const response=await fetch('https://'+w.ns+'.apps.ocp.box1.org/api/info',{signal:AbortSignal.timeout(10000)});
+      if(!response.ok)return 'public Route HTTP '+response.status;
+      const info=await response.json();check(info.name===w.name&&info.gitRef===w.data.sourceRevision,'Deployed source identity mismatch');
+      const health=await fetch('https://'+w.ns+'.apps.ocp.box1.org/q/health/ready',{signal:AbortSignal.timeout(10000)});
+      if(!health.ok||(await health.json()).status!=='UP')return 'public readiness UP';
+      return true;
+    }catch(e){if(e.message==='Deployed source identity mismatch')throw e;return 'public Route reachable';}
+  });
+  await w.save('DEPLOYMENT_READY',{deploymentImage:image,deploymentReadyAt:new Date().toISOString()});
+  const links={sourceUrl:w.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${w.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${w.data.pipelineName}`,deploymentUrl:'https://'+w.ns+'.apps.ocp.box1.org',argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${w.name}`,onboardingUrl:w.data.onboardingPR.url,statusRecord:'rhdh/'+w.key,imageDigest:w.data.imageDigest};
+  for(const [key,value] of Object.entries(links))w.ctx.output(key,value);
+}
+// virtual-machine profile ---------------------------------------------------------------
+async function vmBuildBarrier(w) {
+  await w.wait('initial VM build prerequisites',300,async()=>{
+    const [namespace,serviceAccount,push,privileged]=await Promise.all([
+      w.kube.get('/api/v1/namespaces/'+w.ns),
+      w.kube.get('/api/v1/namespaces/box1-ci/serviceaccounts/ci-bootc-release'),
+      w.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-release-image-builder'),
+      w.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-privileged-scc'),
+    ]);
+    if(namespace?.status?.phase!=='Active')return w.ns+' Namespace Active';
+    if(!serviceAccount)return 'box1-ci/ci-bootc-release ServiceAccount';
+    if(push?.roleRef?.name!=='system:image-builder'||!push.subjects?.some(s=>s.name==='ci-bootc-release'&&s.namespace==='box1-ci'))return 'bootc registry push permission';
+    if(privileged?.roleRef?.name!=='system:openshift:scc:privileged'||!privileged.subjects?.some(s=>s.name==='ci-bootc-release'&&s.namespace==='box1-ci'))return 'bootc privileged build permission';
+    return true;
+  });
+}
+function vmPlatformChecks(w) {
+  return {
+    namespace:async()=>{const v=await w.kube.get('/api/v1/namespaces/'+w.ns);return v?.status?.phase==='Active'||w.ns+' Namespace Active';},
+    serviceaccounts:async()=>{const values=await Promise.all([[w.ns,w.name+'-updater'],['box1-ci','ci-bootc-release'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']].map(async([ns,name])=>[ns,name,await w.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
+    registry_pull:async()=>{const v=await w.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${w.name}-image-puller`);return v?.roleRef?.name==='system:image-puller'&&v.subjects?.some(s=>s.kind==='Group'&&s.name==='system:serviceaccounts:'+w.ns)||'VM namespace registry pull permission';},
+    registry_push:async()=>{const v=await w.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-release-image-builder');return v?.roleRef?.name==='system:image-builder'&&v.subjects?.some(s=>s.name==='ci-bootc-release'&&s.namespace==='box1-ci')||'bootc registry push permission';},
+    observer_rbac:async()=>{const values=await Promise.all([w.ns,'openshift-gitops'].map(async ns=>[ns,await w.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/roles/${w.name}-release-observer`),await w.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${w.name}-release-observer`)]));const missing=values.find(([ns,role,binding])=>!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'));return missing?missing[0]+' release observer permissions':true;},
+    pac_repository:async()=>{const v=await w.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+w.name);return v?.spec?.url===`https://github.com/${ORG}/${w.name}`||'PAC Repository registration';},
+    argo_application:async()=>{const v=await w.kube.get(APPS+'/'+w.name);return v?.spec?.destination?.namespace===w.ns&&v.status?.sync?.status==='Synced'||'Argo CD Application Synced in '+w.ns;},
+    virtual_machine:async()=>await w.kube.get(`/apis/kubevirt.io/v1/namespaces/${w.ns}/virtualmachines/${w.name}`)?true:'initial VirtualMachine',
+  };
+}
+// First release: OS image, install disk, and the :development update channel. The
+// VM boots exactly this image from its disk, so pointing the channel at it before
+// the promotion merges cannot offer the guest anything unapproved.
+function vmBuildSpec(w, secretName) {
+  const task=(name,taskName,params,runAfter)=>({name,...(runAfter?{runAfter:[runAfter]}:{}),taskRef:{resolver:'cluster',params:[{name:'kind',value:'task'},{name:'name',value:taskName},{name:'namespace',value:'box1-ci'}]},params:Object.entries(params).map(([n,v])=>({name:n,value:v}))});
+  const digest='$(tasks.build.results.image-digest)';
+  return {taskRunTemplate:{serviceAccountName:'ci-bootc-release'},timeouts:{pipeline:'45m'},pipelineSpec:{tasks:[
+    task('build','box1-bootc-build',{revision:w.data.sourceRevision,'source-repo':ORG+'/'+w.name,'git-auth-secret':secretName,'push-image':'true','image-name':w.name}),
+    task('disk','box1-bootc-disk',{revision:w.data.sourceRevision,'image-name':w.name,'image-digest':digest,channel:'development'},'build'),
+    task('channel','box1-bootc-channel',{'image-name':w.name,'image-digest':digest,channel:'development'},'disk'),
+  ],results:[{name:'image-digest',value:digest},{name:'disk-digest',value:'$(tasks.disk.results.disk-digest)'}]}};
+}
+// Mirrors box1-gitops-promote's virtual-machine first promotion: record the OS image,
+// pin and list the root DataVolume, and start the VM.
+async function vmPromotionUpdates(w, files) {
+  check(/^sha256:[a-f0-9]{64}$/.test(w.data.imageDigest||'')&&/^sha256:[a-f0-9]{64}$/.test(w.data.diskDigest||'')&&w.data.diskDigest!==ZERO,'First VM release requires the image and disk digests');
+  const base=`workloads/${w.name}/`,v=base+'virtualmachine.yaml',dv=base+'datavolume.yaml',k=base+'kustomization.yaml';
+  const updates={[v]:{...files[v]},[dv]:{...files[dv]},[k]:{...files[k]}};
+  const replaceOnce=(content,pattern,value,message)=>{const matches=content.match(new RegExp(pattern.source,'gm'));check(matches?.length===1,message);return content.replace(new RegExp(pattern.source,'m'),value);};
+  check(updates[v].content.includes('    box1.org/source-revision: '+w.data.sourceRevision),'Initial source revision drifted');
+  updates[v].content=replaceOnce(updates[v].content,/^    box1\.org\/os-image-digest: sha256:0{64}$/,'    box1.org/os-image-digest: '+w.data.imageDigest,'First release requires the unbuilt VM OS digest');
+  updates[v].content=replaceOnce(updates[v].content,/^    box1\.org\/build-pipelinerun: .+$/,'    box1.org/build-pipelinerun: box1-ci/'+w.data.pipelineName,'Build annotation missing');
+  updates[v].content=replaceOnce(updates[v].content,/^  runStrategy: Halted$/,'  runStrategy: Always','Unbuilt VirtualMachine must be Halted');
+  updates[dv].content=replaceOnce(updates[dv].content,new RegExp('^(      url: docker://image-registry\\.openshift-image-registry\\.svc:5000/box1-ci/'+w.name+'-disk@)sha256:0{64}$'),'$1'+w.data.diskDigest,'Unbuilt root DataVolume must reference the zero disk digest');
+  check(!/^  - datavolume\.yaml$/m.test(updates[k].content),'Unbuilt VM must not list its DataVolume');
+  updates[k].content=replaceOnce(updates[k].content,/^  - virtualmachine\.yaml$/,'  - virtualmachine.yaml\n  - datavolume.yaml','Kustomization must list virtualmachine.yaml once');
+  for(const file of [v,dv,k]) {
+    const live=await w.content('box1-workloads-dev',file);
+    check(live===files[file].content||live===updates[file].content,'First-release GitOps content drifted: '+file);
+  }
+  return updates;
+}
+async function vmVerify(w) {
+  requireImageDigest(w);
+  const vmPath=`/apis/kubevirt.io/v1/namespaces/${w.ns}/virtualmachines/${w.name}`;
+  await w.wait('first VM boot with guest agent',1500,async()=>{
+    const app=await w.kube.get(APPS+'/'+w.name);
+    const sync=w.data.promotionSync,operation=app?.status?.operationState;
+    if(sync?.requestedAt&&['Error','Failed'].includes(operation?.phase)&&Date.parse(operation.startedAt)>=Date.parse(sync.requestedAt)-5000)throw new Error(syncDetails(app,w.name,sync.revision));
+    const vm=await w.kube.get(vmPath);
+    if(vm?.metadata?.annotations?.['box1.org/os-image-digest']!==w.data.imageDigest)return 'VirtualMachine records the promoted OS digest';
+    const dv=await w.kube.get(`/apis/cdi.kubevirt.io/v1beta1/namespaces/${w.ns}/datavolumes/${w.name}-root`);
+    if(dv?.status?.phase==='Failed')throw new Error('Root disk import failed: '+(dv.status.conditions||[]).map(c=>c.message).filter(Boolean).join('; '));
+    if(dv?.status?.phase!=='Succeeded')return 'root disk imported ('+(dv?.status?.phase||'pending')+(dv?.status?.progress?' '+dv.status.progress:'')+')';
+    if(!vm.status?.conditions?.some(c=>c.type==='Ready'&&c.status==='True'))return 'VirtualMachine Ready';
+    const vmi=await w.kube.get(`/apis/kubevirt.io/v1/namespaces/${w.ns}/virtualmachineinstances/${w.name}`);
+    if(!vmi?.status?.conditions?.some(c=>c.type==='AgentConnected'&&c.status==='True'))return 'guest agent connected';
+    if(app?.status?.sync?.status!=='Synced'||app?.status?.health?.status!=='Healthy')return 'Argo CD Synced and Healthy';
+    return true;
+  });
+  const image=`image-registry.openshift-image-registry.svc:5000/box1-ci/${w.name}@${w.data.imageDigest}`;
+  await w.save('DEPLOYMENT_READY',{deploymentImage:image,deploymentReadyAt:new Date().toISOString()});
+  const links={sourceUrl:w.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${w.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${w.data.pipelineName}`,deploymentUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/${w.ns}/kubevirt.io~v1~VirtualMachine/${w.name}`,argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${w.name}`,onboardingUrl:w.data.onboardingPR.url,statusRecord:'rhdh/'+w.key,imageDigest:w.data.imageDigest};
+  for(const [key,value] of Object.entries(links))w.ctx.output(key,value);
+}
+function vmBuildResults(w, run) {
+  const imageDigest=imageDigestResult(run);
+  const diskDigest=(run.status.results||[]).find(r=>r.name==='disk-digest')?.value;
+  check(/^sha256:[a-f0-9]{64}$/.test(diskDigest)&&diskDigest!==ZERO,'Initial CI did not return an immutable VM disk digest');
+  return {imageDigest,diskDigest};
+}
 class Kube {
   async request(method, resource, body, allowMissing = false) {
     const token = (await fs.readFile('/var/run/secrets/kubernetes.io/serviceaccount/token','utf8')).trim();
@@ -181,7 +397,7 @@ class Kube {
   get(p) { return this.request('GET',p,undefined,true); }
 }
 class Workflow {
-  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.profile=validateProfile(ctx.input.profile||'service'); this.vm=this.profile==='virtual-machine'; this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); this.activeWaits=new Set(); this.saveQueue=Promise.resolve(); }
+  constructor({ctx, config, credentials, catalog, kube = new Kube()}) { this.ctx=ctx; this.catalogService=catalog; this.config=config; this.credentials=credentials; this.kube=kube; this.name=validateName(ctx.input.name); this.profile=validateProfile(ctx.input.profile||'service'); this.handlers=PROFILES[this.profile]; this.ns=this.name+'-dev'; this.key='box1-onboard-'+this.name; this.holder=(ctx.task?.id || 'task')+'-'+crypto.randomUUID(); this.executionId=ctx.task?.id || crypto.randomUUID(); this.activeWaits=new Set(); this.saveQueue=Promise.resolve(); }
   log(phase, state, extra={}) { const fields={onboardingId:this.data?.onboardingId||this.data?.id||this.executionId,phase,state,...extra}; this.ctx.logger.info(Object.entries(fields).map(([k,v])=>`${k}=${String(v).replace(/\s+/g,'_')}`).join(' ')); }
   async github(p, method='GET', body, options={}) {
     const { token } = options.token ? {token:options.token} : await this.credentials.getCredentials({url:'https://github.com/'+ORG});
@@ -317,15 +533,16 @@ class Workflow {
   }
   async content(repo,file,ref='main') { const result=await this.github(`/repos/${ORG}/${repo}/contents/${file}?ref=${encodeURIComponent(ref)}`,'GET',undefined,{missing:true});return result?Buffer.from(result.content,'base64').toString():null; }
   async repository() {
+    check(this.handlers.sourceRepository!==false,`The ${this.profile} onboarding profile has no source repository`);
     check(['private','public'].includes(this.ctx.input.visibility),'Invalid repository visibility');
     let repo=await this.github(`/repos/${ORG}/${this.name}`,'GET',undefined,{missing:true});
     if(!this.data) {
       check(!repo,'Repository already exists and has no matching onboarding record; refusing to modify it');
-      await this.save('REQUESTED',{id:crypto.randomUUID(),name:this.name,namespace:this.ns,owner:this.ctx.input.owner,visibility:this.ctx.input.visibility,description:this.ctx.input.description,templateVersion:PROFILES[this.profile].templateVersion,...(this.vm?{profile:this.profile}:{}),createdAt:new Date().toISOString()});
+      await this.save('REQUESTED',{id:crypto.randomUUID(),name:this.name,namespace:this.ns,owner:this.ctx.input.owner,visibility:this.ctx.input.visibility,description:this.ctx.input.description,templateVersion:this.handlers.templateVersion,...this.handlers.recordFields(this),createdAt:new Date().toISOString()});
     }
     check(this.data.owner===this.ctx.input.owner && this.data.visibility===this.ctx.input.visibility && this.data.description===this.ctx.input.description,'Retry parameters must match the original request');
     this.requireProfile();
-    const marker={id:this.data.id,name:this.name,namespace:this.ns,owner:this.data.owner,templateVersion:this.data.templateVersion,...(this.vm?{profile:this.profile}:{})};
+    const marker={id:this.data.id,name:this.name,namespace:this.ns,owner:this.data.owner,templateVersion:this.data.templateVersion,...this.handlers.markerFields(this)};
     const pendingDescription=this.data.description+' [box1-onboarding:'+this.data.id+']';
     if(!repo) repo=await this.github('/orgs/'+ORG+'/repos','POST',{name:this.name,private:this.data.visibility==='private',description:pendingDescription,auto_init:false,delete_branch_on_merge:true});
     let currentMarker=await this.content(this.name,'.box1/onboarding.json');
@@ -347,7 +564,7 @@ class Workflow {
       let revision=head;
       if(!complete){
         check(Object.keys(existing).length===1&&existing['.box1/onboarding.json']===blobSha(files['.box1/onboarding.json'].content),'Source repository changed during initialization; refusing to overwrite');
-        revision=await this.commit(this.name,head,files,PROFILES[this.profile].commitMessage);
+        revision=await this.commit(this.name,head,files,this.handlers.commitMessage);
         await this.github(`/repos/${ORG}/${this.name}/git/refs/heads/main`,'PATCH',{sha:revision,force:false});
       }
       await this.save('REPOSITORY_READY',{sourceRevision:revision,sourceUrl:`https://github.com/${ORG}/${this.name}`});
@@ -422,31 +639,10 @@ class Workflow {
     await this.save(stage==='onboarding'?'ONBOARDING_MERGED':'PROMOTION_MERGED',{[field]:{...this.data[field],merged:true,mergeCommit:pr.merge_commit_sha}});
     return pr;
   }
-  async buildBarrier() {
-    if(this.vm) return this.vmBuildBarrier();
-    await this.wait('initial build prerequisites',300,async()=>{
-      const [namespace,serviceAccount,push]=await Promise.all([
-        this.kube.get('/api/v1/namespaces/'+this.ns),
-        this.kube.get('/api/v1/namespaces/box1-ci/serviceaccounts/ci-build'),
-        this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder'),
-      ]);
-      if(namespace?.status?.phase!=='Active')return this.ns+' Namespace Active';
-      if(!serviceAccount)return 'box1-ci/ci-build ServiceAccount';
-      if(push?.roleRef?.name!=='system:image-builder'||!push.subjects?.some(s=>s.name==='ci-build'&&s.namespace==='box1-ci'))return 'CI registry push permission';
-      return true;
-    });
-  }
+  // Build prerequisites for the profile, waited for at the end of box1:development:platform.
+  async buildBarrier() { if(this.handlers.buildBarrier) await this.handlers.buildBarrier(this); }
   async platformReady(options) {
-    const checks=this.vm?this.vmPlatformChecks():{
-      namespace:async()=>{const v=await this.kube.get('/api/v1/namespaces/'+this.ns);return v?.status?.phase==='Active'||this.ns+' Namespace Active';},
-      serviceaccounts:async()=>{const values=await Promise.all([[this.ns,this.name],['box1-ci','ci-build'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']].map(async([ns,name])=>[ns,name,await this.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
-      registry_pull:async()=>{const v=await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${this.name}-image-puller`);return v?.roleRef?.name==='system:image-puller'&&v.subjects?.some(s=>s.name===this.name&&s.namespace===this.ns)||'service registry pull permission';},
-      registry_push:async()=>{const v=await this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-build-image-builder');return v?.roleRef?.name==='system:image-builder'&&v.subjects?.some(s=>s.name==='ci-build'&&s.namespace==='box1-ci')||'CI registry push permission';},
-      observer_rbac:async()=>{const values=await Promise.all([this.ns,'openshift-gitops'].map(async ns=>[ns,await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/roles/${this.name}-release-observer`),await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${this.name}-release-observer`)]));const missing=values.find(([ns,role,binding])=>!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'));return missing?missing[0]+' release observer permissions':true;},
-      pac_repository:async()=>{const v=await this.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+this.name);return v?.spec?.url===`https://github.com/${ORG}/${this.name}`||'PAC Repository registration';},
-      argo_application:async()=>{const v=await this.kube.get(APPS+'/'+this.name);return v?.spec?.destination?.namespace===this.ns&&v.status?.sync?.status==='Synced'||'Argo CD Application Synced in '+this.ns;},
-      deployment:async()=>await this.kube.get(`/apis/apps/v1/namespaces/${this.ns}/deployments/${this.name}`)?true:'initial Deployment',
-    };
+    const checks=this.handlers.platformChecks(this);
     const started=Date.now();
     await this.wait('development platform readiness',900,async()=>{
       const results=await Promise.all(Object.entries(checks).map(async([condition,fn])=>{try{const result=await fn();return [condition,result===true?'ready':result];}catch(error){return [condition,'failed: '+error.message];}}));
@@ -459,8 +655,8 @@ class Workflow {
   platformComplete() { return Boolean(this.data.history?.some(item=>item.phase==='PLATFORM_READY')); }
   async completePlatform({signal}) {
     const options={signal,logPhase:'platform'};
-    await this.awaitServiceSync(options);
-    await this.platformReady(options);
+    if(this.handlers.validateBundle) await this.awaitServiceSync(options);
+    if(this.handlers.platformChecks) await this.platformReady(options);
   }
   async buildToken() {
     const app=this.config.getConfigArray('integrations.github')[0].getConfigArray('apps')[0];
@@ -470,7 +666,10 @@ class Workflow {
     const installation=await this.github('/orgs/'+ORG+'/installation','GET',undefined,{token:jwt});
     return this.github('/app/installations/'+installation.id+'/access_tokens','POST',{repositories:[this.name],permissions:{contents:'read'}},{token:jwt});
   }
+  hasBuild() { return Boolean(this.handlers.buildSpec||this.handlers.buildResults); }
   async build() {
+    // Without a PipelineRun the profile records its build results directly.
+    if(!this.handlers.buildSpec) return this.save('IMAGE_BUILT',await this.handlers.buildResults(this,null));
     const runs='/apis/tekton.dev/v1/namespaces/box1-ci/pipelineruns';
     let runName=this.data.pipelineName||`onb-${this.name}-${this.data.sourceRevision.slice(0,8)}`;
     let run=await this.kube.get(runs+'/'+runName);
@@ -499,7 +698,7 @@ class Workflow {
       }
       // Secret creation is observed BEFORE PipelineRun creation, eliminating the PAC secret race.
       check(secret.data?.['git-provider-token'],'Build credential Secret was not persisted');
-      const spec=this.vm?this.vmBuildSpec(secretName):{taskRunTemplate:{serviceAccountName:'ci-build'},timeouts:{pipeline:'45m'},pipelineSpec:{tasks:[{name:'build',taskRef:{resolver:'cluster',params:[{name:'kind',value:'task'},{name:'name',value:'box1-quarkus-maven'},{name:'namespace',value:'box1-ci'}]},params:[{name:'revision',value:this.data.sourceRevision},{name:'source-repo',value:ORG+'/'+this.name},{name:'git-auth-secret',value:secretName},{name:'push-image',value:'true'},{name:'image-name',value:this.name}]}],results:[{name:'image-digest',value:'$(tasks.build.results.image-digest)'}]}};
+      const spec=this.handlers.buildSpec(this,secretName);
       run=await this.kube.request('POST',runs,{apiVersion:'tekton.dev/v1',kind:'PipelineRun',metadata:{name:runName,namespace:'box1-ci',labels:{'backstage.io/kubernetes-id':this.name,'box1.org/onboarding-id':this.data.id}},spec});
       await this.save('BUILD_RUNNING',{pipelineName:runName,credentialSecret:secretName});
       // Owner-reference cleanup also works if the Hub process exits before explicit cleanup.
@@ -517,97 +716,12 @@ class Workflow {
       if(failedSecret){check(failedSecret.metadata.labels?.['box1.org/onboarding-id']===this.data.id,'Refusing to delete an unrelated Secret');await this.kube.request('DELETE',CI+'/secrets/'+this.data.credentialSecret,{apiVersion:'v1',kind:'DeleteOptions',preconditions:{uid:failedSecret.metadata.uid}});}
       throw error;
     }
-    const digest=(run.status.results||[]).find(r=>r.name==='image-digest')?.value;
-    check(/^sha256:[a-f0-9]{64}$/.test(digest),'Initial CI did not return an immutable image digest');
-    const diskDigest=this.vm?(run.status.results||[]).find(r=>r.name==='disk-digest')?.value:undefined;
-    if(this.vm) check(/^sha256:[a-f0-9]{64}$/.test(diskDigest)&&diskDigest!==ZERO,'Initial CI did not return an immutable VM disk digest');
+    const results=this.handlers.buildResults(this,run);
     if(this.data.credentialSecret) {
       const secret=await this.kube.get(CI+'/secrets/'+this.data.credentialSecret);
       if(secret){check(secret.metadata.labels?.['box1.org/onboarding-id']===this.data.id,'Refusing to delete an unrelated Secret');await this.kube.request('DELETE',CI+'/secrets/'+this.data.credentialSecret,{apiVersion:'v1',kind:'DeleteOptions',preconditions:{uid:secret.metadata.uid}});}
     }
-    await this.save('IMAGE_BUILT',{imageDigest:digest,...(this.vm?{diskDigest}:{})});
-  }
-  // ---- virtual-machine profile -------------------------------------------------
-  async vmBuildBarrier() {
-    await this.wait('initial VM build prerequisites',300,async()=>{
-      const [namespace,serviceAccount,push,privileged]=await Promise.all([
-        this.kube.get('/api/v1/namespaces/'+this.ns),
-        this.kube.get('/api/v1/namespaces/box1-ci/serviceaccounts/ci-bootc-release'),
-        this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-release-image-builder'),
-        this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-privileged-scc'),
-      ]);
-      if(namespace?.status?.phase!=='Active')return this.ns+' Namespace Active';
-      if(!serviceAccount)return 'box1-ci/ci-bootc-release ServiceAccount';
-      if(push?.roleRef?.name!=='system:image-builder'||!push.subjects?.some(s=>s.name==='ci-bootc-release'&&s.namespace==='box1-ci'))return 'bootc registry push permission';
-      if(privileged?.roleRef?.name!=='system:openshift:scc:privileged'||!privileged.subjects?.some(s=>s.name==='ci-bootc-release'&&s.namespace==='box1-ci'))return 'bootc privileged build permission';
-      return true;
-    });
-  }
-  vmPlatformChecks() {
-    return {
-      namespace:async()=>{const v=await this.kube.get('/api/v1/namespaces/'+this.ns);return v?.status?.phase==='Active'||this.ns+' Namespace Active';},
-      serviceaccounts:async()=>{const values=await Promise.all([[this.ns,this.name+'-updater'],['box1-ci','ci-bootc-release'],['box1-ci','ci-gitops'],['box1-ci','ci-observe']].map(async([ns,name])=>[ns,name,await this.kube.get(`/api/v1/namespaces/${ns}/serviceaccounts/${name}`)]));const missing=values.find(([, ,v])=>!v);return missing?missing[0]+'/'+missing[1]+' ServiceAccount':true;},
-      registry_pull:async()=>{const v=await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/${this.name}-image-puller`);return v?.roleRef?.name==='system:image-puller'&&v.subjects?.some(s=>s.kind==='Group'&&s.name==='system:serviceaccounts:'+this.ns)||'VM namespace registry pull permission';},
-      registry_push:async()=>{const v=await this.kube.get('/apis/rbac.authorization.k8s.io/v1/namespaces/box1-ci/rolebindings/ci-bootc-release-image-builder');return v?.roleRef?.name==='system:image-builder'&&v.subjects?.some(s=>s.name==='ci-bootc-release'&&s.namespace==='box1-ci')||'bootc registry push permission';},
-      observer_rbac:async()=>{const values=await Promise.all([this.ns,'openshift-gitops'].map(async ns=>[ns,await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/roles/${this.name}-release-observer`),await this.kube.get(`/apis/rbac.authorization.k8s.io/v1/namespaces/${ns}/rolebindings/${this.name}-release-observer`)]));const missing=values.find(([ns,role,binding])=>!role||binding?.roleRef?.name!==role.metadata.name||!binding.subjects?.some(s=>s.name==='ci-observe'&&s.namespace==='box1-ci'));return missing?missing[0]+' release observer permissions':true;},
-      pac_repository:async()=>{const v=await this.kube.get('/apis/pipelinesascode.tekton.dev/v1alpha1/namespaces/box1-ci/repositories/'+this.name);return v?.spec?.url===`https://github.com/${ORG}/${this.name}`||'PAC Repository registration';},
-      argo_application:async()=>{const v=await this.kube.get(APPS+'/'+this.name);return v?.spec?.destination?.namespace===this.ns&&v.status?.sync?.status==='Synced'||'Argo CD Application Synced in '+this.ns;},
-      virtual_machine:async()=>await this.kube.get(`/apis/kubevirt.io/v1/namespaces/${this.ns}/virtualmachines/${this.name}`)?true:'initial VirtualMachine',
-    };
-  }
-  // First release: OS image, install disk, and the :development update channel. The
-  // VM boots exactly this image from its disk, so pointing the channel at it before
-  // the promotion merges cannot offer the guest anything unapproved.
-  vmBuildSpec(secretName) {
-    const task=(name,taskName,params,runAfter)=>({name,...(runAfter?{runAfter:[runAfter]}:{}),taskRef:{resolver:'cluster',params:[{name:'kind',value:'task'},{name:'name',value:taskName},{name:'namespace',value:'box1-ci'}]},params:Object.entries(params).map(([n,v])=>({name:n,value:v}))});
-    const digest='$(tasks.build.results.image-digest)';
-    return {taskRunTemplate:{serviceAccountName:'ci-bootc-release'},timeouts:{pipeline:'45m'},pipelineSpec:{tasks:[
-      task('build','box1-bootc-build',{revision:this.data.sourceRevision,'source-repo':ORG+'/'+this.name,'git-auth-secret':secretName,'push-image':'true','image-name':this.name}),
-      task('disk','box1-bootc-disk',{revision:this.data.sourceRevision,'image-name':this.name,'image-digest':digest,channel:'development'},'build'),
-      task('channel','box1-bootc-channel',{'image-name':this.name,'image-digest':digest,channel:'development'},'disk'),
-    ],results:[{name:'image-digest',value:digest},{name:'disk-digest',value:'$(tasks.disk.results.disk-digest)'}]}};
-  }
-  // Mirrors box1-gitops-promote's virtual-machine first promotion: record the OS image,
-  // pin and list the root DataVolume, and start the VM.
-  async vmPromotionUpdates(files) {
-    check(/^sha256:[a-f0-9]{64}$/.test(this.data.imageDigest||'')&&/^sha256:[a-f0-9]{64}$/.test(this.data.diskDigest||'')&&this.data.diskDigest!==ZERO,'First VM release requires the image and disk digests');
-    const base=`workloads/${this.name}/`,v=base+'virtualmachine.yaml',dv=base+'datavolume.yaml',k=base+'kustomization.yaml';
-    const updates={[v]:{...files[v]},[dv]:{...files[dv]},[k]:{...files[k]}};
-    const replaceOnce=(content,pattern,value,message)=>{const matches=content.match(new RegExp(pattern.source,'gm'));check(matches?.length===1,message);return content.replace(new RegExp(pattern.source,'m'),value);};
-    check(updates[v].content.includes('    box1.org/source-revision: '+this.data.sourceRevision),'Initial source revision drifted');
-    updates[v].content=replaceOnce(updates[v].content,/^    box1\.org\/os-image-digest: sha256:0{64}$/,'    box1.org/os-image-digest: '+this.data.imageDigest,'First release requires the unbuilt VM OS digest');
-    updates[v].content=replaceOnce(updates[v].content,/^    box1\.org\/build-pipelinerun: .+$/,'    box1.org/build-pipelinerun: box1-ci/'+this.data.pipelineName,'Build annotation missing');
-    updates[v].content=replaceOnce(updates[v].content,/^  runStrategy: Halted$/,'  runStrategy: Always','Unbuilt VirtualMachine must be Halted');
-    updates[dv].content=replaceOnce(updates[dv].content,new RegExp('^(      url: docker://image-registry\\.openshift-image-registry\\.svc:5000/box1-ci/'+this.name+'-disk@)sha256:0{64}$'),'$1'+this.data.diskDigest,'Unbuilt root DataVolume must reference the zero disk digest');
-    check(!/^  - datavolume\.yaml$/m.test(updates[k].content),'Unbuilt VM must not list its DataVolume');
-    updates[k].content=replaceOnce(updates[k].content,/^  - virtualmachine\.yaml$/,'  - virtualmachine.yaml\n  - datavolume.yaml','Kustomization must list virtualmachine.yaml once');
-    for(const file of [v,dv,k]) {
-      const live=await this.content('box1-workloads-dev',file);
-      check(live===files[file].content||live===updates[file].content,'First-release GitOps content drifted: '+file);
-    }
-    return updates;
-  }
-  async vmVerify() {
-    const vmPath=`/apis/kubevirt.io/v1/namespaces/${this.ns}/virtualmachines/${this.name}`;
-    await this.wait('first VM boot with guest agent',1500,async()=>{
-      const app=await this.kube.get(APPS+'/'+this.name);
-      const sync=this.data.promotionSync,operation=app?.status?.operationState;
-      if(sync?.requestedAt&&['Error','Failed'].includes(operation?.phase)&&Date.parse(operation.startedAt)>=Date.parse(sync.requestedAt)-5000)throw new Error(syncDetails(app,this.name,sync.revision));
-      const vm=await this.kube.get(vmPath);
-      if(vm?.metadata?.annotations?.['box1.org/os-image-digest']!==this.data.imageDigest)return 'VirtualMachine records the promoted OS digest';
-      const dv=await this.kube.get(`/apis/cdi.kubevirt.io/v1beta1/namespaces/${this.ns}/datavolumes/${this.name}-root`);
-      if(dv?.status?.phase==='Failed')throw new Error('Root disk import failed: '+(dv.status.conditions||[]).map(c=>c.message).filter(Boolean).join('; '));
-      if(dv?.status?.phase!=='Succeeded')return 'root disk imported ('+(dv?.status?.phase||'pending')+(dv?.status?.progress?' '+dv.status.progress:'')+')';
-      if(!vm.status?.conditions?.some(c=>c.type==='Ready'&&c.status==='True'))return 'VirtualMachine Ready';
-      const vmi=await this.kube.get(`/apis/kubevirt.io/v1/namespaces/${this.ns}/virtualmachineinstances/${this.name}`);
-      if(!vmi?.status?.conditions?.some(c=>c.type==='AgentConnected'&&c.status==='True'))return 'guest agent connected';
-      if(app?.status?.sync?.status!=='Synced'||app?.status?.health?.status!=='Healthy')return 'Argo CD Synced and Healthy';
-      return true;
-    });
-    const image=`image-registry.openshift-image-registry.svc:5000/box1-ci/${this.name}@${this.data.imageDigest}`;
-    await this.save('DEPLOYMENT_READY',{deploymentImage:image,deploymentReadyAt:new Date().toISOString()});
-    const links={sourceUrl:this.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${this.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${this.data.pipelineName}`,deploymentUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/${this.ns}/kubevirt.io~v1~VirtualMachine/${this.name}`,argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${this.name}`,onboardingUrl:this.data.onboardingPR.url,statusRecord:'rhdh/'+this.key,imageDigest:this.data.imageDigest};
-    for(const [key,value] of Object.entries(links))this.ctx.output(key,value);
+    await this.save('IMAGE_BUILT',results);
   }
   // Compatibility wrapper for box1:development:onboard: the same phases the template runs.
   async delivery() {
@@ -615,19 +729,34 @@ class Workflow {
   }
   // Every phase must run with the profile recorded when the repository was created.
   requireProfile() { check((this.data?.profile||'service')===this.profile,'Onboarding profile does not match the original request'); }
-  async gitopsFiles() {
+  // Binds a phase to this onboarding: its recorded source revision and profile.
+  checkpoint() {
     check(this.data?.sourceRevision===this.ctx.input.sourceRevision,'Missing or mismatched repository checkpoint');
     this.requireProfile();
-    return (this.vm?validateVmBundle:validateBundle)(await filesAt(path.join(this.ctx.workspacePath,'gitops')),this.name);
+  }
+  // A phase the profile declares absent still checks the checkpoint, then records the skip.
+  skip(phase, reason) { this.checkpoint(); this.log(phase,'skipped',{reason}); }
+  async gitopsFiles() {
+    this.checkpoint();
+    return this.handlers.validateBundle(await filesAt(path.join(this.ctx.workspacePath,'gitops')),this.name);
+  }
+  // A profile without a source repository has no box1:repository:ensure step, so its
+  // first phase creates the onboarding record.
+  async ensureRecord() {
+    const {initialRecord}=this.handlers;
+    if(this.data||!initialRecord) return;
+    await this.save('REQUESTED',{id:crypto.randomUUID(),name:this.name,namespace:this.ns,templateVersion:this.handlers.templateVersion,...this.handlers.recordFields(this),...await initialRecord(this),createdAt:new Date().toISOString()});
   }
   async provision() {
+    await this.ensureRecord();
+    if(!this.handlers.validateBundle) return this.skip('provision','profile_has_no_gitops_bundle');
     const files=await this.gitopsFiles();
     if(!this.data.onboardingPR?.merged) await this.pullRequest('onboarding',files);
   }
   // Ends at the build's dependency boundary. The rest of platform readiness is
   // observed during buildPhase, so the build does not wait on unrelated conditions.
   async platform() {
-    if(!this.data.applicationsSyncedAt&&!this.data.serviceSyncRequestedAt) await this.requestServiceSync();
+    if(this.handlers.validateBundle&&!this.data.applicationsSyncedAt&&!this.data.serviceSyncRequestedAt) await this.requestServiceSync();
     if(!this.data.imageDigest) await this.buildBarrier();
   }
   // Scaffolder steps run one at a time, so the overlap lives inside this action.
@@ -637,7 +766,7 @@ class Workflow {
   async buildPhase() {
     const observers=new AbortController();
     const signal=this.ctx.signal?AbortSignal.any([this.ctx.signal,observers.signal]):observers.signal;
-    const build=(async()=>{if(!this.data.imageDigest) await this.build();})().catch(error=>{observers.abort(error);throw error;});
+    const build=(async()=>{if(this.hasBuild()&&!this.data.imageDigest) await this.build();})().catch(error=>{observers.abort(error);throw error;});
     const platform=this.platformComplete()?Promise.resolve():this.completePlatform({signal}).catch(error=>{
       if(!signal.aborted) this.log('platform','failed',{condition:error.message});
       throw error;
@@ -648,23 +777,12 @@ class Workflow {
     if(!this.platformComplete()) await this.save('PLATFORM_READY');
   }
   async promote() {
+    const {validateBundle,promotionUpdates}=this.handlers;
+    if(!validateBundle||!promotionUpdates) return this.skip('promote',validateBundle?'profile_has_no_workload_promotion':'profile_has_no_gitops_bundle');
     const files=await this.gitopsFiles();
-    if(this.vm&&!this.data.promotionPR?.merged) {
+    if(!this.data.promotionPR?.merged) {
       check(this.platformComplete(),'Platform readiness has not completed; retry the same service to resume');
-      await this.pullRequest('promotion',await this.vmPromotionUpdates(files));
-    } else if(!this.data.promotionPR?.merged) {
-      check(this.platformComplete(),'Platform readiness has not completed; retry the same service to resume');
-      const paths=[`workloads/${this.name}/kustomization.yaml`,`workloads/${this.name}/deployment.yaml`];const updates={};
-      for(const file of paths) updates[file]={...files[file]};
-      check(updates[paths[0]].content.includes('digest: sha256:'+'0'.repeat(64)),'First release requires the unbuilt development image');
-      updates[paths[0]].content=updates[paths[0]].content.replace('digest: sha256:'+'0'.repeat(64),'digest: '+this.data.imageDigest);
-      updates[paths[1]].content=updates[paths[1]].content.replace(/^  replicas: 0$/m,'  replicas: 1').replace(/^    box1\.org\/build-pipelinerun: .+$/m,'    box1.org/build-pipelinerun: box1-ci/'+this.data.pipelineName);
-      check(updates[paths[1]].content.includes('box1.org/source-revision: '+this.data.sourceRevision),'Initial source revision drifted');
-      for(const file of paths) {
-        const live=await this.content('box1-workloads-dev',file);
-        check(live===files[file].content||live===updates[file].content,'First-release GitOps content drifted: '+file);
-      }
-      await this.pullRequest('promotion',updates);
+      await this.pullRequest('promotion',await promotionUpdates(this,files));
     }
     await this.requestPromotionSync();
   }
@@ -678,30 +796,13 @@ class Workflow {
     await this.save('PROMOTION_SYNC_REQUESTED',{promotionSync:{revision,requestedAt:requested===null?null:new Date(requested).toISOString()}});
   }
   async verify() {
-    check(this.data?.imageDigest,'Cannot verify deployment without an image digest');
-    if(this.vm) return this.vmVerify();
-    const image=`image-registry.openshift-image-registry.svc:5000/box1-ci/${this.name}@${this.data.imageDigest}`;
-    await this.wait('first deployment and public endpoint',900,async()=>{
-      const app=await this.kube.get(APPS+'/'+this.name);const dep=await this.kube.get(`/apis/apps/v1/namespaces/${this.ns}/deployments/${this.name}`);
-      const sync=this.data.promotionSync,operation=app?.status?.operationState;
-      if(sync?.requestedAt&&['Error','Failed'].includes(operation?.phase)&&Date.parse(operation.startedAt)>=Date.parse(sync.requestedAt)-5000)throw new Error(syncDetails(app,this.name,sync.revision));
-      if(app?.status?.sync?.status!=='Synced'||app?.status?.health?.status!=='Healthy')return 'Argo CD Synced and Healthy';
-      if(dep?.spec?.template?.spec?.containers[0].image!==image||dep.status?.observedGeneration!==dep.metadata.generation||!dep.status?.availableReplicas)return 'digest-pinned Deployment Available';
-      try{
-        const response=await fetch('https://'+this.ns+'.apps.ocp.box1.org/api/info',{signal:AbortSignal.timeout(10000)});
-        if(!response.ok)return 'public Route HTTP '+response.status;
-        const info=await response.json();check(info.name===this.name&&info.gitRef===this.data.sourceRevision,'Deployed source identity mismatch');
-        const health=await fetch('https://'+this.ns+'.apps.ocp.box1.org/q/health/ready',{signal:AbortSignal.timeout(10000)});
-        if(!health.ok||(await health.json()).status!=='UP')return 'public readiness UP';
-        return true;
-      }catch(e){if(e.message==='Deployed source identity mismatch')throw e;return 'public Route reachable';}
-    });
-    await this.save('DEPLOYMENT_READY',{deploymentImage:image,deploymentReadyAt:new Date().toISOString()});
-    const links={sourceUrl:this.data.sourceUrl,catalogUrl:`https://developer-hub.apps.ocp.box1.org/catalog/default/component/${this.name}`,pipelineUrl:`https://console-openshift-console.apps.ocp.box1.org/k8s/ns/box1-ci/tekton.dev~v1~PipelineRun/${this.data.pipelineName}`,deploymentUrl:'https://'+this.ns+'.apps.ocp.box1.org',argoUrl:`https://openshift-gitops-server-openshift-gitops.apps.ocp.box1.org/applications/openshift-gitops/${this.name}`,onboardingUrl:this.data.onboardingPR.url,statusRecord:'rhdh/'+this.key,imageDigest:this.data.imageDigest};
-    for(const [key,value] of Object.entries(links))this.ctx.output(key,value);
+    if(!this.handlers.verify) return this.skip('verify','profile_has_no_verification');
+    return this.handlers.verify(this);
   }
+  // Catalog actions take only `name`, so the stored record, not the input, names the
+  // profile whose completion rule applies. A record without `profile` is a service.
   async registerCatalog() {
-    check(this.data?.deploymentImage && this.data.onboardingPR?.merged && this.data.promotionPR?.merged,'Catalog completion requires a verified development deployment');
+    check(PROFILES[validateProfile(this.data?.profile||'service')].catalogComplete(this.data),'Catalog completion requires a verified development deployment');
     await this.catalogSubmit();
     await this.catalogVerify();
   }
@@ -752,4 +853,4 @@ async function ensureCatalog(catalog,ctx) {
   }
   throw new Error('Catalog registration did not resolve '+ref+' within five minutes; resume the same onboarding request');
 }
-module.exports={DELIVERY_PHASES,PROFILES,Workflow,Kube,validateName,validateProfile,validateBundle,validateVmBundle,filesAt,blobSha,ensureCatalog};
+module.exports={DELIVERY_PHASES,PROFILES,Workflow,Kube,validateName,validateProfile,profileInputSchema,validateBundle,validateVmBundle,filesAt,blobSha,ensureCatalog};
