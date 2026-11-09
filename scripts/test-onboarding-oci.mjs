@@ -172,8 +172,8 @@ for (const [name, files, digest, expected] of [
 }
 
 test('the GitOps PR records everything needed to review and roll back', () => {
-  const body = pullRequestBody(oci, { digest: digestB, version: '1.2.0', revision, buildUrl: 'https://ci.example/run' }, digestA);
-  for (const value of ['1.2.0', revision, repository, digestB, oci.pluginPath, 'RHDH 1.9.7', 'Backstage 1.45.3', digestA, 'https://ci.example/run']) {
+  const body = pullRequestBody(oci, { digest: digestB, version: '1.3.0', revision, buildUrl: 'https://ci.example/run' }, digestA);
+  for (const value of ['1.3.0', revision, repository, digestB, oci.pluginPath, 'RHDH 1.9.7', 'Backstage 1.45.3', digestA, 'https://ci.example/run']) {
     assert(body.includes(value), `Missing ${value}`);
   }
 });
