@@ -61,6 +61,13 @@ test('bundle validation rejects workloads, wider RBAC, token scopes and Applicat
   rejects(edit(files,rel,'  - imagestreams/layers','  - imagestreams'),/push Role may only get and update/);
   rejects(edit(files,rel,`  - "${name}-bundle"\n  verbs`,'  - "other-bundle"\n  verbs'),/push Role may only get and update/);
   rejects(edit(files,rel,`- kind: ServiceAccount\n  name: "${name}-release"`,'- kind: ServiceAccount\n  name: "ci-build"'),/bind <name>-bundle-push to <name>-release only/);
+  // 1.6.0: the consumer's pull Role and binding (box1-org/box1-gitops#140, #141).
+  rejects(edit(files,rel,'  verbs:\n  - get\n---','  verbs:\n  - get\n  - update\n---'),/pull Role may only get imagestreams\/layers/);
+  rejects(edit(files,rel,`  name: "${name}-bundle-pull"\n  namespace: box1-ci\nrules:\n- apiGroups:\n  - ''\n  - image.openshift.io\n  resources:\n  - imagestreams/layers`,`  name: "${name}-bundle-pull"\n  namespace: box1-ci\nrules:\n- apiGroups:\n  - ''\n  - image.openshift.io\n  resources:\n  - imagestreams`),/pull Role may only get imagestreams\/layers/);
+  rejects(edit(files,rel,'- kind: ServiceAccount\n  name: ci-bundle-pull','- kind: ServiceAccount\n  name: ci-build'),/bind <name>-bundle-pull to ci-bootc-release and ci-bundle-pull only/);
+  rejects(edit(files,rel,'  name: ci-bundle-pull\n  namespace: box1-ci\n','  name: ci-bundle-pull\n  namespace: box1-ci\n- kind: ServiceAccount\n  name: ci-bootc-check\n  namespace: box1-ci\n'),/bind <name>-bundle-pull to ci-bootc-release and ci-bundle-pull only/);
+  { const parts=files[rel].content.split(/^---\n/m); const kept=parts.filter(p=>!p.includes(`name: "${name}-bundle-pull"`)).join('---\n');
+    rejects({...files,[rel]:{...files[rel],content:kept}},/exactly the Roles <name>-bundle-push and <name>-bundle-pull/); }
   rejects(edit(files,rel,`  name: "${name}-release"\n  namespace: box1-ci\n---`,`  name: "${name}-release"\n  namespace: box1-ci\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: ${name}-token\n  namespace: box1-ci\n---`),/Unexpected generated resource for an artifact repository: Secret/);
   rejects(edit(files,rel,`  name: "${name}-bundle"\n  namespace: box1-ci`,`  name: "${name}-bundle"\n  namespace: ${name}-dev`),/must be in box1-ci/);
   rejects(edit(files,repo,`    - box1-org/${consumer}`,'    - box1-org/box1-workloads-dev'),/never box1-gitops or box1-workloads-dev/);

@@ -416,7 +416,10 @@ assert(!checkForm({ name: 'orders-api', description: 'Too long', owner: 'user:de
     assert.throws(() => validateBundle(gitopsFiles, name));
     assert.throws(() => validateVmBundle(gitopsFiles, name));
     const resources = YAML.parseAllDocuments(execFileSync(kubectl, ['kustomize', path.join(target, `gitops/ci/${name}`)], { encoding: 'utf8' })).map(d => d.toJSON());
-    assert.deepEqual(resources.map(r => r.kind).sort(), ['ImageStream', 'Repository', 'Role', 'RoleBinding', 'ServiceAccount']);
+    assert.deepEqual(resources.map(r => `${r.kind}/${r.metadata.name}`).sort(), [`ImageStream/${name}-bundle`, `Repository/${name}`, `Role/${name}-bundle-pull`, `Role/${name}-bundle-push`, `RoleBinding/${name}-bundle-pull`, `RoleBinding/${name}-bundle-push`, `ServiceAccount/${name}-release`]);
+    // The consumer's bootc builds pull the bundle (1.6.0, box1-org/box1-gitops#140, #141).
+    const pull = resources.find(r => r.kind === 'RoleBinding' && r.metadata.name === `${name}-bundle-pull`);
+    assert.deepEqual(pull.subjects.map(s => s.name), ['ci-bootc-release', 'ci-bundle-pull']);
     assert(resources.every(r => r.metadata.namespace === 'box1-ci'));
     assert.deepEqual(resources.find(r => r.kind === 'Repository').spec.settings.github_app_token_scope_repos, [`box1-org/${parameters.consumerRepository}`]);
     assert(!fs.existsSync(path.join(target, 'gitops/workloads')), 'No workload directory');

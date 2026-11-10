@@ -432,6 +432,9 @@ const REGISTRY='image-registry.openshift-image-registry.svc:5000';
 const ARTIFACT_CONSUMER=/^(?!box1-gitops$)(?!box1-workloads-dev$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ARTIFACT_CONSUMER_PATH=/^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/;
 const ARTIFACT_PUSH_RULES=name=>[{apiGroups:['','image.openshift.io'],resources:['imagestreams/layers'],resourceNames:[name+'-bundle'],verbs:['get','update']}];
+// 1.6.0: the consumer's bootc builds pull the bundle (box1-org/box1-gitops#140, #141).
+const ARTIFACT_PULL_RULES=name=>[{apiGroups:['','image.openshift.io'],resources:['imagestreams/layers'],resourceNames:[name+'-bundle'],verbs:['get']}];
+const ARTIFACT_PULL_SUBJECTS=[{kind:'ServiceAccount',name:'ci-bootc-release',namespace:'box1-ci'},{kind:'ServiceAccount',name:'ci-bundle-pull',namespace:'box1-ci'}];
 function artifactCiApplication(w) { return w.name+'-ci'; }
 // The consumer named by a ci/<name>/ PaC Repository: its only token scope.
 function artifactScopeConsumer(repository, name) {
@@ -466,11 +469,15 @@ function validateArtifactBundle(files, name) {
       artifactScopeConsumer(obj,name);
     } else if(obj.kind==='ServiceAccount') check(obj.apiVersion==='v1'&&m.name===name+'-release','Only the <name>-release ServiceAccount may be created');
     else if(obj.kind==='ImageStream') check(obj.apiVersion==='image.openshift.io/v1'&&m.name===name+'-bundle','Only the <name>-bundle ImageStream may be created');
+    else if(obj.kind==='Role'&&m.name===name+'-bundle-pull') check(obj.apiVersion==='rbac.authorization.k8s.io/v1'&&same(obj.rules,ARTIFACT_PULL_RULES(name)),'The pull Role may only get imagestreams/layers of <name>-bundle');
     else if(obj.kind==='Role') check(obj.apiVersion==='rbac.authorization.k8s.io/v1'&&m.name===name+'-bundle-push'&&same(obj.rules,ARTIFACT_PUSH_RULES(name)),'The push Role may only get and update imagestreams/layers of <name>-bundle');
+    else if(obj.kind==='RoleBinding'&&m.name===name+'-bundle-pull') check(obj.apiVersion==='rbac.authorization.k8s.io/v1'&&same(obj.roleRef,{apiGroup:'rbac.authorization.k8s.io',kind:'Role',name:name+'-bundle-pull'})&&same(obj.subjects,ARTIFACT_PULL_SUBJECTS),'The pull RoleBinding must bind <name>-bundle-pull to ci-bootc-release and ci-bundle-pull only');
     else if(obj.kind==='RoleBinding') check(obj.apiVersion==='rbac.authorization.k8s.io/v1'&&m.name===name+'-bundle-push'&&same(obj.roleRef,{apiGroup:'rbac.authorization.k8s.io',kind:'Role',name:name+'-bundle-push'})&&same(obj.subjects,[{kind:'ServiceAccount',name:name+'-release',namespace:'box1-ci'}]),'The push RoleBinding must bind <name>-bundle-push to <name>-release only');
     else throw new Error('Unexpected generated resource for an artifact repository: '+obj.kind);
   }
-  for(const kind of ['Application','Repository','ServiceAccount','ImageStream','Role','RoleBinding']) check(seen[kind]===1,'Artifact onboarding needs exactly one '+kind);
+  for(const kind of ['Application','Repository','ServiceAccount','ImageStream']) check(seen[kind]===1,'Artifact onboarding needs exactly one '+kind);
+  const named=kind=>objects.filter(({obj})=>obj.kind===kind).map(({obj})=>obj.metadata.name).sort();
+  for(const kind of ['Role','RoleBinding']) check(same(named(kind),[name+'-bundle-pull',name+'-bundle-push']),'Artifact onboarding needs exactly the '+kind+'s <name>-bundle-push and <name>-bundle-pull');
   return files;
 }
 // The consumer is declared in the source repository's .tekton/release.yaml (params

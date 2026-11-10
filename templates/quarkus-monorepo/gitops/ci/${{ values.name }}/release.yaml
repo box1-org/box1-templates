@@ -48,3 +48,39 @@ subjects:
 - kind: ServiceAccount
   name: "${{ values.name }}-release"
   namespace: box1-ci
+---
+# The consumer's bootc builds pull this bundle for its COPY --from line: releases as
+# ci-bootc-release, PR builds as ci-bundle-pull (ci-bootc-check has no token). Pull only,
+# this one ImageStream (box1-org/box1-gitops#140, #141).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "${{ values.name }}-bundle-pull"
+  namespace: box1-ci
+rules:
+- apiGroups:
+  - ''
+  - image.openshift.io
+  resources:
+  - imagestreams/layers
+  resourceNames:
+  - "${{ values.name }}-bundle"
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "${{ values.name }}-bundle-pull"
+  namespace: box1-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "${{ values.name }}-bundle-pull"
+subjects:
+- kind: ServiceAccount
+  name: ci-bootc-release
+  namespace: box1-ci
+- kind: ServiceAccount
+  name: ci-bundle-pull
+  namespace: box1-ci
