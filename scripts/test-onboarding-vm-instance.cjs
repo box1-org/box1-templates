@@ -301,9 +301,11 @@ test('verify retries a failed booted-digest check under a new name, at most thre
 });
 
 test('catalog: the instance entity comes from its GitOps bundle, with no source repository',async()=>{
-  const target=`https://github.com/box1-org/box1-workloads-dev/blob/main/workloads/${name}/catalog-info.yaml`;
+  const target=`https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/${name}/catalog-info.yaml`;
   const calls=[];let entity=null;
-  const catalog={getEntityByRef:async ref=>{calls.push('get '+ref);return entity;},addLocation:async l=>{calls.push('add '+l.target);entity={spec:{type:'vm-instance'},metadata:{annotations:{'box1.org/workload-profile':'vm-instance','backstage.io/managed-by-location':'url:'+l.target}}};}};
+  // Like Backstage: managed-by-location in tree/ form, the registered URL kept as the origin.
+  const registered=url=>({spec:{type:'vm-instance'},metadata:{annotations:{'box1.org/workload-profile':'vm-instance','backstage.io/managed-by-location':'url:'+url.replace('/blob/','/tree/'),'backstage.io/managed-by-origin-location':'url:'+url}}});
+  const catalog={getEntityByRef:async ref=>{calls.push('get '+ref);return entity;},addLocation:async l=>{calls.push('add '+l.target);entity=registered(l.target);}};
   // Catalog actions pass only `name`: the record names the profile.
   const w=workflow({catalog,input:{profile:undefined,sourceRevision:undefined},data:record({onboardingPR:{merged:true},promotionPR:{merged:true},deploymentImage:'x',imageDigest:image,bootedDigest:{digest:image}})});
   assert.equal(w.profile,'service');
@@ -311,6 +313,15 @@ test('catalog: the instance entity comes from its GitOps bundle, with no source 
   assert.deepEqual(calls,['get component:default/site-west','add '+target,'get component:default/site-west']);
   assert.equal(w.outputs.entityRef,'component:default/site-west');assert.equal(w.outputs.catalogInfoUrl,target);
   assert.equal(w.data.phase,'COMPLETE');
+  // A resumed run finds the entity registered by 1.5.0 under the blob/ URL and keeps it.
+  entity=registered(`https://github.com/box1-org/box1-workloads-dev/blob/main/workloads/${name}/catalog-info.yaml`);
+  calls.length=0;
+  await workflow({catalog,input:{profile:undefined},data:w.data}).catalogSubmit();
+  assert.deepEqual(calls,['get component:default/site-west']);
+  entity=registered(`https://github.com/box1-org/box1-workloads-dev/tree/main/workloads/site-east/catalog-info.yaml`);
+  await assert.rejects(workflow({catalog,input:{profile:undefined},data:w.data}).catalogSubmit(),/is not this VM instance/);
+  entity=registered(`https://github.com/box1-org/other-repo/blob/main/workloads/${name}/catalog-info.yaml`);
+  await assert.rejects(workflow({catalog,input:{profile:undefined},data:w.data}).catalogSubmit(),/is not this VM instance/);
   entity={spec:{type:'service'},metadata:{annotations:{'github.com/project-slug':'box1-org/site-west'}}};
   await assert.rejects(workflow({catalog,input:{profile:undefined},data:w.data}).catalogSubmit(),/is not this VM instance/);
   await assert.rejects(workflow({catalog,input:{profile:undefined},data:{...w.data,bootedDigest:undefined}}).registerCatalog(),/Catalog completion requires a verified development deployment/);

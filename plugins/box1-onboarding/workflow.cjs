@@ -883,10 +883,14 @@ async function vmInstanceVerify(w) {
 // A verified instance: both PRs merged, the VM running, and the booted digest proven.
 function vmInstanceComplete(data) { return deploymentComplete(data)&&Boolean(data.bootedDigest?.digest)&&data.bootedDigest.digest===data.imageDigest; }
 // The instance has no repository: its catalog-info.yaml lives in its GitOps bundle.
+// Backstage records managed-by-location in GitHub's tree/ form even for a location registered
+// as blob/ (1.5.0 registered blob/ and kept the original only in managed-by-origin-location), so
+// the target is tree/ like the repository profiles, and ownership compares normalized URLs.
+const githubTreeUrl=url=>typeof url==='string'?url.replace(/^(url:https:\/\/github\.com\/[^/]+\/[^/]+\/)blob\//,'$1tree/'):url;
 function vmInstanceCatalogEntity(w) {
-  const target=`https://github.com/${ORG}/box1-workloads-dev/blob/main/workloads/${w.name}/catalog-info.yaml`;
+  const target=`https://github.com/${ORG}/box1-workloads-dev/tree/main/workloads/${w.name}/catalog-info.yaml`;
   return {ref:'component:default/'+w.name,target,
-    owns:entity=>entity.spec?.type==='vm-instance'&&entity.metadata?.annotations?.['box1.org/workload-profile']==='vm-instance'&&entity.metadata.annotations['backstage.io/managed-by-location']==='url:'+target,
+    owns:entity=>{const a=entity.metadata?.annotations||{};return entity.spec?.type==='vm-instance'&&a['box1.org/workload-profile']==='vm-instance'&&[a['backstage.io/managed-by-location'],a['backstage.io/managed-by-origin-location']].some(l=>githubTreeUrl(l)==='url:'+target);},
     mismatch:`Existing catalog entity component:default/${w.name} is not this VM instance (expected a vm-instance Component from ${target})`};
 }
 class Kube {
