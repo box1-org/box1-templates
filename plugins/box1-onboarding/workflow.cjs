@@ -1111,8 +1111,15 @@ class Workflow {
     const branch=(stage==='onboarding'?'onboard/':'onboard-release/')+this.name;
     let pr=this.data[field]?await this.github(REPO+'/pulls/'+this.data[field].number):null;
     if(!pr) {
+      // The branch name is deterministic, so a recreated name (a decommissioned service or
+      // instance onboarded again) also finds the earlier onboarding's PRs. Only a PR that
+      // carries this onboarding's id is ours; a closed or merged one from another onboarding
+      // is history, and an open one needs review (1.5.2).
       const list=await this.github(REPO+'/pulls?state=all&head='+encodeURIComponent(ORG+':'+branch)+'&base=main');
-      check(list.length<=1,'Duplicate onboarding PRs require review');pr=list[0];
+      const ours=list.filter(p=>String(p.body||'').includes(this.data.id));
+      const foreign=list.filter(p=>!ours.includes(p)&&p.state==='open');
+      check(!foreign.length,`An open ${stage} PR from another onboarding uses ${branch} (#${foreign.map(p=>p.number).join(', #')}); close it before onboarding ${this.name} again`);
+      check(ours.length<=1,'Duplicate onboarding PRs require review');pr=ours[0];
     }
     if(!pr) {
       const ref=await this.github(REPO+'/git/ref/heads/'+branch,'GET',undefined,{missing:true});
@@ -1136,6 +1143,8 @@ class Workflow {
   }
   async merge(stage,pr,files) {
     const field=stage==='onboarding'?'onboardingPR':'promotionPR';let retry=this.data[field]?.validationRetries||0;
+    // A merged PR skips verifyPR below, so its identity is checked here (1.5.2).
+    check(String(pr.body||'').includes(this.data.id),'PR identity changed: #'+pr.number+' belongs to another onboarding');
     if(!pr.merged_at) {
       await this.verifyPR(pr,files);
       await this.wait(stage+' exact-head required checks',900,async()=>{

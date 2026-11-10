@@ -1,6 +1,6 @@
 {
   "name": "box1-scaffolder-onboarding-dynamic",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "private": true,
   "main": "index.cjs",
   "files": [

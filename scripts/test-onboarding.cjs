@@ -39,6 +39,29 @@ test('restart after onboarding PR creation validates and resumes the existing PR
  w.data.onboardingPR={number:7,head:sha};w.github=async p=>p.endsWith('/pulls/7')?pr:{};w.verifyPR=async()=>{};w.wait=async(_l,_s,fn)=>{await fn();};w.merge=async()=>{merged++;};
  await w.pullRequest('onboarding',{});assert.equal(merged,1);assert.equal(w.data.onboardingPR.number,7);
 });
+test('a merged PR from an earlier onboarding of the same name is not reused (1.5.2)',async()=>{
+ const w=workflow();const calls=[];let merged;
+ const old={number:210,state:'closed',merged_at:'2026-11-10T03:30:25Z',body:'Box1 zero-touch onboarding 00000000-0000-0000-0000-000000000000.',head:{sha:'c'.repeat(40)}};
+ w.content=async()=>null;w.commit=async()=>'d'.repeat(40);w.merge=async(_s,pr)=>{merged=pr;};
+ w.github=async(p,method,body)=>{calls.push((method||'GET')+' '+p.split('?')[0]);
+  if(p.includes('/pulls?state=all'))return [old];
+  if(p.includes('/git/ref/heads/onboard/'))return null;
+  if(p.endsWith('/git/ref/heads/main'))return {object:{sha:'e'.repeat(40)}};
+  if(method==='POST'&&p.endsWith('/pulls'))return {number:216,html_url:'https://github.com/box1-org/box1-workloads-dev/pull/216',head:{sha:'d'.repeat(40)},body:body.body};
+  return {};};
+ await w.pullRequest('onboarding',{['workloads/'+name+'/namespace.yaml']:{content:'x',mode:'100644'}});
+ assert.equal(merged.number,216);assert.equal(w.data.onboardingPR.number,216);
+ assert(calls.some(c=>c.startsWith('POST')&&c.endsWith('/git/refs')),'a new branch is created');
+});
+test('an open PR from another onboarding on the same branch is refused (1.5.2)',async()=>{
+ const w=workflow();w.merge=async()=>{throw Error('must not merge');};
+ w.github=async p=>p.includes('/pulls?state=all')?[{number:9,state:'open',body:'Box1 zero-touch onboarding someone-else'}]:{};
+ await assert.rejects(w.pullRequest('onboarding',{}),/open onboarding PR from another onboarding uses onboard\/orders-api \(#9\)/);
+});
+test('merge refuses an already merged PR of another onboarding (1.5.2)',async()=>{
+ const w=workflow();
+ await assert.rejects(w.merge('promotion',{number:211,merged_at:'x',body:'Box1 zero-touch onboarding someone-else'},{}),/PR identity changed: #211 belongs to another onboarding/);
+});
 test('a concurrent task cannot acquire an unexpired service lease',async()=>{
  const w=workflow({get:async()=>({spec:{holderIdentity:'other',renewTime:new Date().toISOString(),leaseDurationSeconds:120}})});
  await assert.rejects(w.open(),/Another onboarding task/);
@@ -107,7 +130,7 @@ test('failed initial build cleans its owned credential Secret',async()=>{
  const w=workflow(kube);w.github=async()=>({sha});w.buildToken=async()=>({token:'test-token',expires_at:new Date(Date.now()+3600000).toISOString()});w.wait=async()=>{throw Error('build failed');};await assert.rejects(w.build(),/build failed/);assert.equal(deleted,true);
 });
 test('failed required checks never produce a merge; retry uses an identical tree',async()=>{
- const w=workflow();const pr={number:1,head:{sha,ref:'onboard/'+name},state:'open'};w.data.onboardingPR={number:1,head:sha,validationRetries:2};w.verifyPR=async()=>{};
+ const w=workflow();const pr={number:1,head:{sha,ref:'onboard/'+name},state:'open',body:'Box1 zero-touch onboarding '+id};w.data.onboardingPR={number:1,head:sha,validationRetries:2};w.verifyPR=async()=>{};
  let merged=false;
  w.github=async(p,method,body)=>{if(p.includes('/merge')){merged=true;return {};}
   if(p.endsWith('/pulls/1'))return pr;
@@ -123,11 +146,11 @@ test('checks from another App cannot authorize the merge',async()=>{
   return {check_runs:['box1-phase1-smoke-','box1-gitops-validate-'].map((n,i)=>({id:i,name:'Pipelines as Code CI / '+n,app:{slug:'other-app'},status:'completed',conclusion:'success'}))};
  };
  w.wait=async(_l,_s,fn)=>{const observation=await fn();assert.equal(typeof observation,'string');throw Error('Required checks still pending');};
- await assert.rejects(w.merge('onboarding',{number:1},{}),/still pending/);assert.equal(merged,false);
+ await assert.rejects(w.merge('onboarding',{number:1,body:'Box1 zero-touch onboarding '+id},{}),/still pending/);assert.equal(merged,false);
 });
 test('fresh validation retries keep the exact GitOps tree and merge only the new checked SHA',async()=>{
  const w=workflow();let head=sha,merged=false,retried=false;
- const next='c'.repeat(40);const pr={number:1,state:'open',head:{sha,ref:'onboard/'+name}};w.data.onboardingPR={number:1,head};w.verifyPR=async()=>{};
+ const next='c'.repeat(40);const pr={number:1,state:'open',head:{sha,ref:'onboard/'+name},body:'Box1 zero-touch onboarding '+id};w.data.onboardingPR={number:1,head};w.verifyPR=async()=>{};
  w.github=async(p,method,body)=>{
   if(p.endsWith('/pulls/1'))return {...pr,head:{...pr.head,sha:head},merged,merge_commit_sha:'d'.repeat(40)};
   if(p.includes('/check-runs'))return {check_runs:['box1-phase1-smoke-','box1-gitops-validate-'].map((n,i)=>({id:i,name:'Pipelines as Code CI / '+n,app:{slug:'box1-pipelines'},status:'completed',conclusion:retried?'success':'failure'}))};
