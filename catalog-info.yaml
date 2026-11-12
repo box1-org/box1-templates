@@ -12,6 +12,7 @@ spec:
     - ./templates/quarkus-monorepo/template.yaml
     - ./templates/vm-instance/template.yaml
     - ./templates/forgejo-proof-service/template.yaml
+    - ./templates/gitlab-proof-service/template.yaml
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

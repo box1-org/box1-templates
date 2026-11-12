@@ -1,0 +1,68 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: gitlab-proof-service
+  title: GitLab proof service
+  description: >-
+    GitLab CE re-run of the Forgejo proof (box1-docs#164). It creates a private
+    GitLab project with a tiny HTTP service, a Dev Spaces devfile and Pipelines as
+    Code runs that build, promote through box1-gl-gitops/workloads-proof and
+    deploy with Argo CD.
+  tags: [gitlab, proof, python]
+  annotations:
+    box1.org/template-version: "0.1.0"
+spec:
+  owner: user:default/mike
+  type: service
+  parameters:
+    - title: Service
+      required: [name, owner]
+      properties:
+        name:
+          title: Name
+          type: string
+          minLength: 3
+          maxLength: 40
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: Creates the private project box1-gl/<name> on GitLab.
+        owner:
+          title: Catalog owner
+          type: string
+          default: user:default/mike
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+  steps:
+    - id: fetch
+      name: Generate service files
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          owner: ${{ parameters.owner }}
+    - id: publish
+      name: Create private GitLab project
+      action: publish:gitlab
+      input:
+        repoUrl: gitlab.apps.ocp.box1.org?owner=box1-gl&repo=${{ parameters.name }}
+        description: GitLab proof service ${{ parameters.name }}
+        repoVisibility: private
+        defaultBranch: main
+        gitCommitMessage: Create service from the gitlab-proof-service template
+    - id: register
+      name: Register in the catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+  output:
+    links:
+      - title: Project
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in Dev Spaces
+        url: https://devspaces.apps.ocp.box1.org/#https://gitlab.apps.ocp.box1.org/box1-gl/${{ parameters.name }}
+      - title: Component
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
