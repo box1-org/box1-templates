@@ -55,8 +55,9 @@ spec:
       name: Register in the catalog
       action: catalog:register
       input:
-        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
-        catalogInfoPath: /catalog-info.yaml
+        # publish:gitea 0.2.15 returns repoContentsUrl without the branch
+        # (.../src/branch/), so the catalog file URL is spelled out.
+        catalogInfoUrl: https://forgejo.apps.ocp.box1.org/box1-fj/${{ parameters.name }}/src/branch/main/catalog-info.yaml
   output:
     links:
       - title: Repository
