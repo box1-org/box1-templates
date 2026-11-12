@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: Forgejo proof service (box1-docs#164)
+  annotations:
+    backstage.io/kubernetes-id: ${{ values.name }}
+    backstage.io/source-location: url:https://forgejo.apps.ocp.box1.org/box1-fj/${{ values.name }}
+  tags: [forgejo, proof, python]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: ${{ values.owner }}

@@ -1,0 +1,68 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: forgejo-proof-service
+  title: Forgejo proof service
+  description: >-
+    Proof of the Forgejo delivery lane (box1-docs#164). It creates a private Forgejo
+    repository with a tiny HTTP service, a Dev Spaces devfile and Pipelines as
+    Code runs that build, promote through box1-fj/workloads-proof and deploy with
+    Argo CD.
+  tags: [forgejo, proof, python]
+  annotations:
+    box1.org/template-version: "0.1.0"
+spec:
+  owner: user:default/mike
+  type: service
+  parameters:
+    - title: Service
+      required: [name, owner]
+      properties:
+        name:
+          title: Name
+          type: string
+          minLength: 3
+          maxLength: 40
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: Creates the private repository box1-fj/<name> on Forgejo.
+        owner:
+          title: Catalog owner
+          type: string
+          default: user:default/mike
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+  steps:
+    - id: fetch
+      name: Generate service files
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          owner: ${{ parameters.owner }}
+    - id: publish
+      name: Create private Forgejo repository
+      action: publish:gitea
+      input:
+        repoUrl: forgejo.apps.ocp.box1.org?owner=box1-fj&repo=${{ parameters.name }}
+        description: Forgejo proof service ${{ parameters.name }}
+        repoVisibility: private
+        defaultBranch: main
+        gitCommitMessage: Create service from the forgejo-proof-service template
+    - id: register
+      name: Register in the catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in Dev Spaces
+        url: https://devspaces.apps.ocp.box1.org/#https://forgejo.apps.ocp.box1.org/box1-fj/${{ parameters.name }}
+      - title: Component
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

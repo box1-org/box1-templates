@@ -1,0 +1,33 @@
+# Dev Spaces workspace for ${{ values.name }} (Forgejo proof, box1-docs#164).
+# Git over HTTPS uses your Forgejo token from a git-credentials Secret in your
+# Dev Spaces namespace; Dev Spaces has no Forgejo OAuth provider.
+schemaVersion: 2.2.2
+metadata:
+  name: ${{ values.name }}
+components:
+  - name: tools
+    container:
+      image: image-registry.openshift-image-registry.svc:5000/box1-devtools/box1-udi@sha256:c3d29a29ae754af2544d052b87ec21d9ccea7dd5287a8cf4dc217d5512397310
+      memoryRequest: 512Mi
+      memoryLimit: 2Gi
+      cpuRequest: 100m
+      cpuLimit: "1"
+      mountSources: true
+      endpoints:
+        - name: http
+          targetPort: 8080
+          exposure: public
+          protocol: https
+commands:
+  - id: test
+    exec:
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: python3 -m unittest -v
+      group: {kind: test, isDefault: true}
+  - id: run
+    exec:
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: python3 app.py
+      group: {kind: run, isDefault: true}
