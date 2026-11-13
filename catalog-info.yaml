@@ -11,6 +11,7 @@ spec:
     - ./templates/rhel-image-vm/template.yaml
     - ./templates/quarkus-monorepo/template.yaml
     - ./templates/vm-instance/template.yaml
+    - ./templates/gitlab-proof-service/template.yaml
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
