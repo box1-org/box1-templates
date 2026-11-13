@@ -2,3 +2,6 @@
 .validation/
 node_modules/
 tools/rhdh-cli/node_modules/
+plugins/box1-home-banner/node_modules/
+plugins/box1-home-banner/dist-dynamic/
+plugins/box1-home-banner/dist/
