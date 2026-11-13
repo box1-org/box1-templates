@@ -12,7 +12,9 @@ with `MarkdownContent` from `@backstage/core-components`, which the host shares.
 The banner text is not in this package. `box1-gitops`
 (`platform/developer-hub/app-config.yaml`) supplies it as
 `widgetLayout.box1-operations-banner.props.content` on the read-only homepage
-layout, including the `${BOX1_ICON_LOGO}` data URI substituted by the backend.
+layout. The logo arrives separately as `props.logo` (the `${BOX1_ICON_LOGO}` data
+URI substituted by the backend) and is rendered as its own image: RHDH 2.1's
+`MarkdownContent` sanitizes `data:` URLs out of Markdown images.
 `homepage.defaultWidgets` lists the banner first.
 
 ## Versions

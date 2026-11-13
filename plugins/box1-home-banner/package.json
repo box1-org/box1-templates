@@ -1,6 +1,6 @@
 {
   "name": "@box1/backstage-plugin-home-banner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Box1 Operations banner card for the RHDH 2.1 homepage (New Frontend System).",
   "main": "src/index.ts",
